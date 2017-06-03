@@ -7,6 +7,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Forelle.Core", "Forelle.Cor
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Forelle.CommandLine", "Forelle.CommandLine\Forelle.CommandLine.csproj", "{B01E6DDD-38C0-4D64-B7B5-4FF3F503A389}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Forelle.Core.Tests", "Forelle.Core.Tests\Forelle.Core.Tests.csproj", "{6E1377C3-2993-4AE8-987A-1712B4F77A48}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -21,6 +23,10 @@ Global
 		{B01E6DDD-38C0-4D64-B7B5-4FF3F503A389}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{B01E6DDD-38C0-4D64-B7B5-4FF3F503A389}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{B01E6DDD-38C0-4D64-B7B5-4FF3F503A389}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6E1377C3-2993-4AE8-987A-1712B4F77A48}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6E1377C3-2993-4AE8-987A-1712B4F77A48}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6E1377C3-2993-4AE8-987A-1712B4F77A48}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6E1377C3-2993-4AE8-987A-1712B4F77A48}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
