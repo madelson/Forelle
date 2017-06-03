@@ -1,0 +1,28 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 15
+VisualStudioVersion = 15.0.26430.6
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Forelle.Core", "Forelle.Core\Forelle.Core.csproj", "{121BD9C4-732B-4694-A3BA-9164A52B4157}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Forelle.CommandLine", "Forelle.CommandLine\Forelle.CommandLine.csproj", "{B01E6DDD-38C0-4D64-B7B5-4FF3F503A389}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{121BD9C4-732B-4694-A3BA-9164A52B4157}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{121BD9C4-732B-4694-A3BA-9164A52B4157}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{121BD9C4-732B-4694-A3BA-9164A52B4157}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{121BD9C4-732B-4694-A3BA-9164A52B4157}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B01E6DDD-38C0-4D64-B7B5-4FF3F503A389}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B01E6DDD-38C0-4D64-B7B5-4FF3F503A389}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B01E6DDD-38C0-4D64-B7B5-4FF3F503A389}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B01E6DDD-38C0-4D64-B7B5-4FF3F503A389}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

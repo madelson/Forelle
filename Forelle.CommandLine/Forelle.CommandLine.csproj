@@ -1,0 +1,15 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>netcoreapp1.1</TargetFramework>
+    <AssemblyName>Forelle</AssemblyName>
+    <!-- for self-contained deployment. See https://docs.microsoft.com/en-us/dotnet/core/deploying/deploy-with-vs -->
+    <RuntimeIdentifiers>win10-x64;osx.10.11-x64</RuntimeIdentifiers>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Forelle.Core\Forelle.Core.csproj" />
+  </ItemGroup>
+
+</Project>
