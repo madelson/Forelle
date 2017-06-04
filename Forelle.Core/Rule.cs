@@ -63,4 +63,12 @@ namespace Forelle
         public override string ToString() =>
             $"{this.Produced} -> {(this.Start > 0 ? "... " : string.Empty)}{string.Join(" ", this.Symbols)}";
     }
+
+    internal static class RuleHelpers
+    {
+        public static HashSet<Symbol> GetAllSymbols(this IEnumerable<Rule> rules)
+        {
+            return new HashSet<Symbol>(rules.Select(r => r.Produced).Concat(rules.SelectMany(r => r.Symbols)));
+        }
+    }
 }

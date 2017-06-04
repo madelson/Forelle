@@ -93,40 +93,46 @@ namespace Forelle.Parsing
             }
             
             // now iteratively build up the remaining follow sets
+
+            // NOTE: this could be more efficient because everything relating to first sets won't do anything new after the first
+            // pass. We could thus move to a two-pass approach where the first pass runs once and the second pass just propagates back
+            // the produced symbol follow set
+
             bool changed;
             do
             {
                 changed = false;
                 foreach (var rule in rules)
                 {
-                    // going backwards reduces the iterations because we learn from the next symbol
-                    for (var i = rule.Symbols.Count - 1; i >= 0; --i)
+                    for (var i = 0; i < rule.Symbols.Count; ++i)
                     {
-                        // for the last symbol, give it the follow of the produced symbol
-                        if (i == rule.Symbols.Count - 1)
+                        var followSet = followSets[rule.Symbols[i]];
+                        var foundNonNullableFollowingSymbol = false;
+                        for (var j = i + 1; j < rule.Symbols.Count; ++j)
+                        {
+                            var followingFirstSet = firstSets[rule.Symbols[j]];
+
+                            // add all tokens in the first set of the following symbol j
+                            foreach (var token in followingFirstSet.Where(t => t != null))
+                            {
+                                changed |= followSet.Add(token);
+                            }
+
+                            // if the symbol j is non-nullable, stop
+                            if (!followingFirstSet.ContainsNull())
+                            {
+                                foundNonNullableFollowingSymbol = true;
+                                break;
+                            }
+                        }
+
+                        // if there are no non-null symbols between i and the end of the rule, then
+                        // we add the follow of the produced symbol to the follow of i
+                        if (!foundNonNullableFollowingSymbol && rule.Symbols[i] != rule.Produced)
                         {
                             foreach (var token in followSets[rule.Produced])
                             {
-                                changed |= followSets[rule.Symbols[i]].Add(token);
-                            }
-                        }
-                        else
-                        {
-                            foreach (var token in firstSets[rule.Symbols[i + 1]])
-                            {
-                                if (token != null)
-                                {
-                                    // add the firsts of the next symbol
-                                    changed |= followSets[rule.Symbols[i]].Add(token);
-                                }
-                                else
-                                {
-                                    // if the next symbol is nullable, also add its follows
-                                    foreach (var followToken in followSets[rule.Symbols[i + 1]])
-                                    {
-                                        changed |= followSets[rule.Symbols[i]].Add(followToken);
-                                    }
-                                }
+                                changed |= followSet.Add(token);
                             }
                         }
                     }

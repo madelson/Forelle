@@ -21,7 +21,7 @@ namespace Forelle.Parsing
                 results.Add("At least one rule is required");
             }
 
-            var symbols = new HashSet<Symbol>(rules.SelectMany(r => r.Symbols).Concat(rules.Select(r => r.Produced)));
+            var symbols = rules.GetAllSymbols();
 
             // check for name re-use
             results.AddRange(
