@@ -19,6 +19,8 @@ namespace Forelle.Core.Tests
             Assert.Throws<ArgumentException>(() => new NonTerminal(string.Empty));
             Assert.Throws<FormatException>(() => new Token("`a"));
             Assert.Throws<FormatException>(() => new NonTerminal("`a"));
+            Assert.DoesNotThrow(() => new Token("`"));
+            Assert.DoesNotThrow(() => new NonTerminal("`"));
         }
 
         [Test]

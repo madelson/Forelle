@@ -11,7 +11,8 @@ namespace Forelle
         internal Symbol(string name, SyntheticSymbolInfo syntheticInfo)
         {
             if (string.IsNullOrEmpty(name)) { throw new ArgumentException("must not be null or empty", nameof(name)); }
-            if (name.IndexOf(SyntheticMarker) >= 0) { throw new FormatException($"{nameof(name)}: must not contain '{SyntheticMarker}'"); }
+            // ensures that user-created names can't collide with synthetic names while still allowing for a token named '`'
+            if (name.Length > 1 && name[0] == SyntheticMarker) { throw new FormatException($"{nameof(name)}: must not start with '{SyntheticMarker}'"); }
 
             this.Name = syntheticInfo != null ? SyntheticMarker + name : name;
             this.SyntheticInfo = syntheticInfo;
