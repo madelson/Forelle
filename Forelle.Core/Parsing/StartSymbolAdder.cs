@@ -22,7 +22,7 @@ namespace Forelle.Parsing
                     .Select(s => new Rule(
                         NonTerminal.CreateSynthetic($"Start<{s.Name}>", new StartSymbolInfo(s)),
                         s,
-                        Token.CreateSynthetic($"End<{s.Name}", new EndSymbolTokenInfo(s))
+                        Token.CreateSynthetic($"End<{s.Name}>", new EndSymbolTokenInfo(s))
                     ))
                 )
                 .ToList();
