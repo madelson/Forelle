@@ -56,6 +56,9 @@ namespace Forelle.Parsing
             // check for recursively-defined symbols
             results.AddRange(GetRecursionErrors(rulesByProduced));
 
+            // validate parser state variable usage
+            results.AddRange(GetParserVariableErrors(rules));
+
             if (results.Any())
             {
                 validationErrors = results;
@@ -66,6 +69,7 @@ namespace Forelle.Parsing
             return true;
         }
 
+        // TODO add support for right-associative and unsupported left recursion validation
         private static IEnumerable<string> GetRecursionErrors(ILookup<NonTerminal, Rule> rulesByProduced)
         {
             var nonRecursive = new HashSet<NonTerminal>();
@@ -90,6 +94,36 @@ namespace Forelle.Parsing
             return rulesByProduced.Select(g => g.Key)
                 .Where(s => !nonRecursive.Contains(s))
                 .Select(s => $"All rules for symbol '{s}' recursively contain '{s}'");
+        }
+
+        private static List<string> GetParserVariableErrors(IReadOnlyCollection<Rule> rules)
+        {
+            var results = new List<string>();
+
+            // rules must have only one action/check for any given variable
+            results.AddRange(rules.SelectMany(
+                r => r.ExtendedInfo.ParserStateActions.Select(a => a.VariableName)
+                    .Concat(r.ExtendedInfo.ParserStateRequirements.Select(a => a.VariableName))
+                    .GroupBy(v => v, (v, g) => (variable: v, count: g.Count()))
+                    .Where(t => t.count > 1)
+                    .Select(t => $"Rule {r} references variable '{t.variable}' multiple times. A rule may contain at most one check or one action for a variable")
+            ));
+
+            // each variable must have push, set, pop, and check
+            const string Require = "REQUIRE";
+            var requiredActions = new[] { ParserStateVariableActionKind.Push, ParserStateVariableActionKind.Set, ParserStateVariableActionKind.Pop }
+                .Select(k => k.ToString().ToUpperInvariant())
+                .Append(Require)
+                .ToArray();
+            results.AddRange(
+                rules.SelectMany(r => r.ExtendedInfo.ParserStateActions.Select(a => (variable: a.VariableName, kind: a.Kind.ToString().ToUpperInvariant())))
+                    .Concat(rules.SelectMany(r => r.ExtendedInfo.ParserStateRequirements.Select(t => (variable: t.VariableName, kind: Require))))
+                    .GroupBy(t => t.variable, t => t.kind)
+                    .Select(g => (variable: g.Key, missing: requiredActions.Except(g).ToArray()))
+                    .Where(t => t.missing.Any())
+                    .Select(t => $"Parser state variable '{t.variable}' is missing the following actions: [{string.Join(", ", t.missing)}]. Each parser state variable must define [{string.Join(", ", requiredActions)}]")
+            );
+            return results;
         }
     }
 }

@@ -14,6 +14,7 @@ namespace Forelle.Core.Tests
             LeftParen = new Token("("),
             RightParen = new Token(")"),
             Plus = new Token("+"),
+            Minus = new Token("-"),
             SemiColon = new Token(";"),
             Return = new Token("return"),
             Comma = new Token(",");
@@ -21,6 +22,8 @@ namespace Forelle.Core.Tests
         public static readonly NonTerminal Exp = new NonTerminal("Exp"),
             Stmt = new NonTerminal("Stmt"),
             ArgList = new NonTerminal("List<Arg>"),
+            BinOp = new NonTerminal("BinOp"),
+            UnOp = new NonTerminal("UnOp"),
             A = new NonTerminal("A"),
             B = new NonTerminal("B"),
             C = new NonTerminal("C"),
@@ -31,6 +34,30 @@ namespace Forelle.Core.Tests
 
         public static Token EndOf(NonTerminal symbol, IEnumerable<Rule> rules) => rules.Select(r => r.Symbols.LastOrDefault() as Token)
             .First(s => s?.SyntheticInfo is EndSymbolTokenInfo i && i.Symbol == symbol);
+
+        public static readonly Variable VariableA = new Variable("A"),
+            VariableB = new Variable("B");
+    }
+
+    internal class Variable
+    {
+        public Variable(string name)
+        {
+            this.Name = name;
+            this.Push = new ParserStateVariableAction(name, ParserStateVariableActionKind.Push);
+            this.Set = new ParserStateVariableAction(name, ParserStateVariableActionKind.Set);
+            this.Pop = new ParserStateVariableAction(name, ParserStateVariableActionKind.Pop);
+            this.Required = new ParserStateVariableRequirement(name);
+            this.NegatedRequired = new ParserStateVariableRequirement(name, requiredValue: false);
+        }
+
+        public string Name { get; }
+
+        public ParserStateVariableAction Push { get; }
+        public ParserStateVariableAction Set { get; }
+        public ParserStateVariableAction Pop { get; }
+        public ParserStateVariableRequirement Required { get; }
+        public ParserStateVariableRequirement NegatedRequired { get; }
     }
 
     internal class Rules : Collection<Rule>

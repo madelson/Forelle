@@ -28,8 +28,11 @@ namespace Forelle.Core.Tests
         /// </summary>
         private static IEnumerable<T> SortForCollectionShouldEqual<T>(this IEnumerable<T> @this)
         {
-            var isComparable = typeof(IComparable<T>).GetTypeInfo().IsAssignableFrom(typeof(T))
-                || typeof(IComparable).GetTypeInfo().IsAssignableFrom(typeof(T));
+            var isComparable = (typeof(IComparable<T>).GetTypeInfo().IsAssignableFrom(typeof(T))
+                || typeof(IComparable).GetTypeInfo().IsAssignableFrom(typeof(T)))
+                // tuple types are IComparable but comparison fails if the items are not comparable
+                && !typeof(T).ToString().StartsWith("System.ValueTuple")
+                && !typeof(T).ToString().StartsWith("System.Tuple");
 
             var comparer = isComparable ? Comparer<T>.Default : Comparers.Create((T item) => EqualityComparer<T>.Default.GetHashCode(item));
             return @this.OrderBy(t => t, comparer);

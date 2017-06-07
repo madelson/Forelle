@@ -15,7 +15,7 @@ namespace Forelle
             }
         }
 
-        public static T[] NotNullOrContainsNull<T>(IEnumerable<T> items, string paramName)
+        public static T[] NotNullOrContainsNullAndDefensiveCopy<T>(IEnumerable<T> items, string paramName)
         {
             var array = items?.ToArray();
             NotNullOrContainsNull(array, paramName);
