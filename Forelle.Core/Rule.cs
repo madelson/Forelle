@@ -47,7 +47,7 @@ namespace Forelle
             IEnumerable<ParserStateVariableAction> parserStateActions = null,
             IEnumerable<Rule> mappedRules = null)
         {
-            this.IsRightAssociative = IsRightAssociative;
+            this.IsRightAssociative = isRightAssociative;
 
             this.ParserStateRequirements = parserStateRequirements != null
                 ? new ReadOnlyCollection<ParserStateVariableRequirement>(parserStateRequirements.Select(r => r ?? throw new ArgumentException("must not contain null", nameof(parserStateRequirements))).ToArray())

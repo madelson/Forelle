@@ -27,7 +27,16 @@ namespace Forelle.Core.Tests
             A = new NonTerminal("A"),
             B = new NonTerminal("B"),
             C = new NonTerminal("C"),
-            D = new NonTerminal("D");
+            D = new NonTerminal("D"),
+            E = new NonTerminal("E"),
+            F = new NonTerminal("F"),
+            G = new NonTerminal("G"),
+            H = new NonTerminal("H"),
+            I = new NonTerminal("I"),
+            J = new NonTerminal("J"),
+            K = new NonTerminal("K"),
+            L = new NonTerminal("L"),
+            M = new NonTerminal("M");
 
         public static NonTerminal StartOf(NonTerminal symbol, IEnumerable<Rule> rules) => rules.Select(r => r.Produced)
             .First(s => s.SyntheticInfo is StartSymbolInfo i && i.Symbol == symbol);

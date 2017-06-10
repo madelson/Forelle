@@ -17,9 +17,30 @@ namespace Forelle.Core.Tests
             return actual;
         }
 
+        public static T ShouldNotEqual<T>(this T actual, T expected, string message = null)
+        {
+            Assert.AreNotEqual(actual: actual, expected: expected, message: message);
+            return actual;
+        }
+
         public static IEnumerable<T> CollectionShouldEqual<T>(this IEnumerable<T> actual, IEnumerable<T> expected, string message = null)
         {
-            CollectionAssert.AreEquivalent(expected?.SortForCollectionShouldEqual(), actual?.SortForCollectionShouldEqual(), message);
+            if (expected == null)
+            {
+                return actual.ShouldEqual(null, message);
+            }
+
+            actual.ShouldNotEqual(null, message);
+
+            var sortedActual = actual.SortForCollectionShouldEqual().ToArray();
+            var sortedExpected = expected.SortForCollectionShouldEqual().ToArray();
+
+            var detailedMessage = (message != null ? message + ": " + Environment.NewLine + Environment.NewLine : string.Empty)
+                + $"Missing from actual: {Environment.NewLine}{string.Join(Environment.NewLine, expected.Except(actual).Select(t => "\t" + t))}"
+                + Environment.NewLine + Environment.NewLine
+                + $"Unexpected in actual: {Environment.NewLine}{string.Join(Environment.NewLine, actual.Except(expected).Select(t => "\t" + t))}";
+
+            CollectionAssert.AreEquivalent(expected?.SortForCollectionShouldEqual(), actual?.SortForCollectionShouldEqual(), detailedMessage);
             return actual;
         }
 

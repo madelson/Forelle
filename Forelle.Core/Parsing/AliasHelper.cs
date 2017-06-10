@@ -20,5 +20,14 @@ namespace Forelle.Parsing
             return symbolReferences.Where(g => g.Count() == 1 && g.Single().Symbols.Count == 1)
                 .ToDictionary(g => g.Key, g => g.Single().Produced);
         }
+
+        public static bool IsAliasOf(NonTerminal alias, NonTerminal aliased, IReadOnlyDictionary<NonTerminal, NonTerminal> aliases)
+        {
+            return aliases.TryGetValue(alias, out var directAliased)
+                && (
+                    directAliased == aliased
+                    || IsAliasOf(directAliased, aliased, aliases)
+                );
+        }
     }
 }
