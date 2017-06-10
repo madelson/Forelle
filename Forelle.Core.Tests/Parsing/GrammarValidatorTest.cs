@@ -32,7 +32,7 @@ namespace Forelle.Core.Tests.Parsing
             var rules = new Rules
             {
                 { Exp, Id },
-                { new Rule(Exp, new[] { Id, Id }, new ExtendedRuleInfo(parserStateRequirements: new[] { VariableA.Required, VariableA.NegatedRequired })) },
+                { new Rule(Exp, new[] { Id, Id }, ExtendedRuleInfo.Create(parserStateRequirements: new[] { VariableA.Required, VariableA.NegatedRequired })) },
                 { Exp, LeftParen, Exp, RightParen },
                 { Stmt, Exp, SemiColon },
                 { Stmt, Exp, SemiColon },
@@ -43,18 +43,18 @@ namespace Forelle.Core.Tests.Parsing
                 { C, LeftParen, A, RightParen },
                 { Stmt, Id, D },
 
-                { new Rule(J, new[] { Id, Id }, new ExtendedRuleInfo(parserStateRequirements: new[] { VariableB.NegatedRequired })) },
-                { new Rule(K, new[] { LeftParen }, new ExtendedRuleInfo(parserStateActions: new[] { VariableB.Push })) },
-                { new Rule(K, new[] { RightParen }, new ExtendedRuleInfo(parserStateActions: new[] { VariableB.Pop })) },
-                { new Rule(K, new[] { Plus }, new ExtendedRuleInfo(parserStateActions: new[] { VariableB.Set })) },
+                { new Rule(J, new[] { Id, Id }, ExtendedRuleInfo.Create(parserStateRequirements: new[] { VariableB.NegatedRequired })) },
+                { new Rule(K, new[] { LeftParen }, ExtendedRuleInfo.Create(parserStateActions: new[] { VariableB.Push })) },
+                { new Rule(K, new[] { RightParen }, ExtendedRuleInfo.Create(parserStateActions: new[] { VariableB.Pop })) },
+                { new Rule(K, new[] { Plus }, ExtendedRuleInfo.Create(parserStateActions: new[] { VariableB.Set })) },
 
-                { new Rule(L, new[] { L, A, L }, new ExtendedRuleInfo(isRightAssociative: true)) },
-                { new Rule(L, new[] { D, A, L }, new ExtendedRuleInfo(isRightAssociative: true)) },
-                { new Rule(L, new[] { L, A, D }, new ExtendedRuleInfo(isRightAssociative: true)) },
-                { new Rule(L, new[] { D }, new ExtendedRuleInfo(isRightAssociative: true)) },
+                { new Rule(L, new[] { L, A, L }, ExtendedRuleInfo.Create(isRightAssociative: true)) },
+                { new Rule(L, new[] { D, A, L }, ExtendedRuleInfo.Create(isRightAssociative: true)) },
+                { new Rule(L, new[] { L, A, D }, ExtendedRuleInfo.Create(isRightAssociative: true)) },
+                { new Rule(L, new[] { D }, ExtendedRuleInfo.Create(isRightAssociative: true)) },
 
                 { L, M }, // M alias of L
-                { new Rule(M, new Symbol[] { L, Id, L }, new ExtendedRuleInfo(isRightAssociative: true)) }, // so this works
+                { new Rule(M, new Symbol[] { L, Id, L }, ExtendedRuleInfo.Create(isRightAssociative: true)) }, // so this works
 
                 { E, Id },
                 { E, F, E }, // hidden

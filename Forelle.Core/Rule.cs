@@ -36,30 +36,30 @@ namespace Forelle
     public sealed class ExtendedRuleInfo
     {
         internal static ExtendedRuleInfo Empty { get; } = new ExtendedRuleInfo(
-            // these must be specified to avoid the constructor falling back to the Empty property
-            parserStateRequirements: Enumerable.Empty<ParserStateVariableRequirement>(),
-            parserStateActions: Enumerable.Empty<ParserStateVariableAction>()
+            isRightAssociative: false,
+            parserStateRequirements: new ReadOnlyCollection<ParserStateVariableRequirement>(Medallion.Collections.Empty.Array<ParserStateVariableRequirement>()),
+            parserStateActions: new ReadOnlyCollection<ParserStateVariableAction>(Medallion.Collections.Empty.Array<ParserStateVariableAction>()),
+            mappedRules: null
         );
 
-        public ExtendedRuleInfo(
-            bool isRightAssociative = false,
-            IEnumerable<ParserStateVariableRequirement> parserStateRequirements = null,
-            IEnumerable<ParserStateVariableAction> parserStateActions = null,
-            IEnumerable<Rule> mappedRules = null)
+        private ExtendedRuleInfo(
+            bool isRightAssociative,
+            ReadOnlyCollection<ParserStateVariableRequirement> parserStateRequirements,
+            ReadOnlyCollection<ParserStateVariableAction> parserStateActions,
+            ReadOnlyCollection<Rule> mappedRules)
         {
             this.IsRightAssociative = isRightAssociative;
+            this.ParserStateRequirements = parserStateRequirements;
+            this.ParserStateActions = parserStateActions;
+            this.MappedRules = mappedRules;
+        }
 
-            this.ParserStateRequirements = parserStateRequirements != null
-                ? new ReadOnlyCollection<ParserStateVariableRequirement>(parserStateRequirements.Select(r => r ?? throw new ArgumentException("must not contain null", nameof(parserStateRequirements))).ToArray())
-                : Empty.ParserStateRequirements;
-
-            this.ParserStateActions = parserStateActions != null
-                ? new ReadOnlyCollection<ParserStateVariableAction>(parserStateActions.Select(a => a ?? throw new ArgumentException("must not contain null", nameof(parserStateActions))).ToArray())
-                : Empty.ParserStateActions;
-
-            this.MappedRules = mappedRules != null
-                ? new ReadOnlyCollection<Rule>(mappedRules.Select(r => r ?? throw new ArgumentException("must not contain null", nameof(mappedRules))).ToArray())
-                : null;
+        public static ExtendedRuleInfo Create(
+            bool isRightAssociative = false,
+            IEnumerable<ParserStateVariableRequirement> parserStateRequirements = null,
+            IEnumerable<ParserStateVariableAction> parserStateActions = null)
+        {
+            return Empty.Update(isRightAssociative, parserStateRequirements, parserStateActions);
         }
 
         /// <summary>
@@ -77,7 +77,7 @@ namespace Forelle
         /// Indicates changes to parser state variables that occur after the <see cref="Rule"/> is parsed
         /// </summary>
         public ReadOnlyCollection<ParserStateVariableAction> ParserStateActions { get; }
-
+        
         /// <summary>
         /// If non-null, this collection indicates that a parse of this <see cref="Rule"/> should instead be interpreted as a parse of
         /// 0 or more other <see cref="Rule"/>. This capability is used to "hide" certain rules (e. g. aliases) or to transform the grammar
@@ -85,7 +85,29 @@ namespace Forelle
         /// 
         /// A null value of this property indicates that no mapping should be performed.
         /// </summary>
-        public ReadOnlyCollection<Rule> MappedRules { get; }
+        internal ReadOnlyCollection<Rule> MappedRules { get; }
+
+        internal ExtendedRuleInfo Update(
+            bool? isRightAssociative = null,
+            IEnumerable<ParserStateVariableRequirement> parserStateRequirements = null,
+            IEnumerable<ParserStateVariableAction> parserStateActions = null,
+            Option<IEnumerable<Rule>> mappedRules = default(Option<IEnumerable<Rule>>))
+        {
+            return new ExtendedRuleInfo(
+                isRightAssociative ?? this.IsRightAssociative,
+                parserStateRequirements != null
+                    ? new ReadOnlyCollection<ParserStateVariableRequirement>(parserStateRequirements.Select(r => r ?? throw new ArgumentException("must not contain null", nameof(parserStateRequirements))).ToArray())
+                    : this.ParserStateRequirements,
+                parserStateActions != null
+                    ? new ReadOnlyCollection<ParserStateVariableAction>(parserStateActions.Select(a => a ?? throw new ArgumentException("must not contain null", nameof(parserStateActions))).ToArray())
+                    : this.ParserStateActions,
+                mappedRules.HasValue
+                    ? mappedRules.Value != null 
+                        ? new ReadOnlyCollection<Rule>(mappedRules.Value.Select(r => r ?? throw new ArgumentException("must not contain null", nameof(mappedRules))).ToArray())
+                        : null
+                    : this.MappedRules
+             );
+        }
 
         public override string ToString()
         {

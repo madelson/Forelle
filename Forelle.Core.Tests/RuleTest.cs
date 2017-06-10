@@ -24,10 +24,10 @@ namespace Forelle.Core.Tests
         [Test]
         public void TestExtendedRuleInfoArgumentValidation()
         {
-            Assert.Throws<ArgumentException>(() => new ExtendedRuleInfo(parserStateRequirements: new[] { default(ParserStateVariableRequirement) }));
-            Assert.Throws<ArgumentException>(() => new ExtendedRuleInfo(parserStateActions: new[] { default(ParserStateVariableAction) }));
-            Assert.Throws<ArgumentException>(() => new ExtendedRuleInfo(mappedRules: new[] { default(Rule) }));
-            Assert.DoesNotThrow(() => new ExtendedRuleInfo());
+            Assert.Throws<ArgumentException>(() => ExtendedRuleInfo.Create(parserStateRequirements: new[] { default(ParserStateVariableRequirement) }));
+            Assert.Throws<ArgumentException>(() => ExtendedRuleInfo.Create(parserStateActions: new[] { default(ParserStateVariableAction) }));
+            Assert.Throws<ArgumentException>(() => ExtendedRuleInfo.Empty.Update(mappedRules: new[] { default(Rule) }));
+            Assert.DoesNotThrow(() => ExtendedRuleInfo.Create());
 
             Assert.Throws<FormatException>(() => new ParserStateVariableRequirement(null));
             Assert.Throws<FormatException>(() => new ParserStateVariableRequirement(string.Empty));
