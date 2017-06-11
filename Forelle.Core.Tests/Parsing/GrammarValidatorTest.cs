@@ -67,6 +67,12 @@ namespace Forelle.Core.Tests.Parsing
                 { G, H, Plus }, // makes H not an alias of E
                 { H },
                 { H, E, Plus },
+
+                { N, Id },
+                { N, O }, // O aliases N
+                { O, N }, // N aliases O
+                { O, P }, // P also aliases O, but is not part of the cycle 
+                { P, Plus }
             };
 
             GrammarValidator.Validate(rules, out var errors).ShouldEqual(false);
@@ -87,6 +93,7 @@ namespace Forelle.Core.Tests.Parsing
                 "Rule E -> H ID exhibits indirect left-recursion along path H -> E +",
                 "Rule E -> F H exhibits indirect hidden left-recursion along path H -> E +",
                 "Rule H -> E + exhibits indirect left-recursion along path E -> H ID",
+                "Invalid recursive cycle found: N -> O -> N"
             });
         }
     }

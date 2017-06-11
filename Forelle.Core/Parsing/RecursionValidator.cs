@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Medallion.Collections;
+using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
@@ -26,7 +27,8 @@ namespace Forelle.Parsing
         {
             return this.GetSymbolRecursionErrors()
                 .Concat(this.GetRightAssociativityErrors())
-                .Concat(this.GetLeftRecursionErrors());
+                .Concat(this.GetLeftRecursionErrors())
+                .Concat(this.GetAliasCycleErrors());
         }
 
         private IEnumerable<string> GetSymbolRecursionErrors()
@@ -145,6 +147,32 @@ namespace Forelle.Parsing
 
             // if we reach here without returning, we found nothing
             return null;
+        }
+
+        /// <summary>
+        /// Finds errors where the alias relationship forms a cycle
+        /// </summary>
+        private IEnumerable<string> GetAliasCycleErrors()
+        {
+            return this._aliases.Keys
+                // find alias => aliased => ... paths
+                .Select(
+                    s => Traverse.Along(s, a => this._aliases.TryGetValue(a, out var aliased) ? aliased : null)
+                        // a traversed cycle is infinite. However, once we see N + 1 elements we know there has been a repeat.
+                        // We take a full 2N elements so that all elements that are part of the cycle appear at least twice
+                        .Take(2 * this._aliases.Count)
+                        .ToArray()
+                )
+                // take only those with repeats (cycles)
+                .Where(s => s.Length > this._aliases.Count)
+                // in each cycle, find the lowest element whose count appears twice. This will be used to identify the cycle
+                // and eliminate duplicates. For example, we might find both X => A => B => A and Y => A => B => A
+                .Select(s => (sequence: s, keySymbol: s.GroupBy(e => e).Where(g => g.Count() > 1).MinBy(g => g.Key.Name).Key))
+                // group duplicate cycles together
+                .GroupBy(t => t.keySymbol, t => t.sequence)
+                // select out the actual cycle: the sequence from [key .. key)
+                .Select(g => g.First().SkipWhile(s => s != g.Key).TakeWhile((s, index) => index == 0 || s != g.Key).ToList())
+                .Select(c => $"Invalid recursive cycle found: {string.Join(" -> ", c)} -> {c[0]}");
         }
 
         [Flags]
