@@ -29,7 +29,9 @@ namespace Forelle
         internal string GetExtendedRuleInfoString()
         {
             var extendedRuleInfoString = this.ExtendedInfo.ToString();
-            return extendedRuleInfoString.Length > 0 ? " " + extendedRuleInfoString : string.Empty;
+            return extendedRuleInfoString.Length == 0 ? string.Empty
+                : this.Symbols.Count == 0 ? extendedRuleInfoString
+                : " " + extendedRuleInfoString;
         }
     }
 
@@ -73,6 +75,7 @@ namespace Forelle
         /// those settings, the <see cref="Rule"/> cannot be parsed
         /// </summary>
         public ReadOnlyCollection<ParserStateVariableRequirement> ParserStateRequirements { get; }
+
         /// <summary>
         /// Indicates changes to parser state variables that occur after the <see cref="Rule"/> is parsed
         /// </summary>
@@ -123,7 +126,7 @@ namespace Forelle
 
             if (this.MappedRules != null)
             {
-                parts.Add($"PARSE AS {{{(this.MappedRules.Count == 0 ? " " : string.Join(", ", this.MappedRules))}}}");
+                parts.Add($"PARSE AS {{ {(this.MappedRules.Count == 0 ? " " : string.Join(", ", this.MappedRules))} }}");
             }
 
             return parts.Count > 0 ? $"{{ {string.Join(", ", parts)} }}" : string.Empty;

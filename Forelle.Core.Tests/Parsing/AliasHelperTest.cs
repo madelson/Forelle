@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 namespace Forelle.Core.Tests.Parsing
 {
     using Forelle.Parsing;
+    using Medallion.Collections;
     using static TestGrammar;
 
     public class AliasHelperTest
@@ -38,6 +39,8 @@ namespace Forelle.Core.Tests.Parsing
 
                 { I, J },
                 { J, I },
+
+                { K, K }, // does not count as an alias
             };
 
             var aliases = AliasHelper.FindAliases(rules);
@@ -56,6 +59,58 @@ namespace Forelle.Core.Tests.Parsing
             AliasHelper.IsAliasOf(Exp, BinOp, aliases).ShouldEqual(false);
             AliasHelper.IsAliasOf(I, J, aliases).ShouldEqual(true);
             AliasHelper.IsAliasOf(J, I, aliases).ShouldEqual(true);
+        }
+
+        [Test]
+        public void TestAliasInlining()
+        {
+            var rules = new Rules
+            {
+                { A, Id },
+                { A, B },
+                { A, C },
+                { A, Plus },
+
+                { B, E },
+                { B, D },
+
+                { C, LeftParen, E },
+                { new Rule(C, new[] { SemiColon }, ExtendedRuleInfo.Create(isRightAssociative: true)) },
+
+                { D, Minus },
+                { D },
+
+                { E, RightParen },
+            };
+
+            AliasHelper.InlineAliases(rules, Empty.ReadOnlyDictionary<NonTerminal, NonTerminal>())
+                .ShouldEqual(rules);
+
+            var inlined = AliasHelper.InlineAliases(
+                rules,
+                new Dictionary<NonTerminal, NonTerminal>
+                {
+                    { B, A },
+                    { C, A },
+                    { D, B },
+                }
+            );
+
+            inlined.Select(r => r.ToString())
+                .SequenceEqual(
+                    new[]
+                    {
+                        "A -> ID",
+                        "A -> E { PARSE AS { B -> E, A -> B } }",
+                        "A -> - { PARSE AS { B -> - { PARSE AS { D -> -, B -> D } }, A -> B } }",
+                        "A -> { PARSE AS { B -> { PARSE AS { D -> , B -> D } }, A -> B } }",
+                        "A -> ( E { PARSE AS { C -> ( E, A -> C } }",
+                        "A -> ; { RIGHT ASSOCIATIVE, PARSE AS { C -> ; { RIGHT ASSOCIATIVE }, A -> C } }",
+                        "A -> +",
+                        "E -> )"
+                    }
+                )
+                .ShouldEqual(true, $"Found: {string.Join(Environment.NewLine, inlined)}");
         }
     }
 }
