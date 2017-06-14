@@ -6,7 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Forelle.Core.Tests
+namespace Forelle.Tests
 {
     internal static class TestGrammar
     {
@@ -15,7 +15,10 @@ namespace Forelle.Core.Tests
             RightParen = new Token(")"),
             Plus = new Token("+"),
             Minus = new Token("-"),
+            Times = new Token("*"),
             SemiColon = new Token(";"),
+            Colon = new Token(":"),
+            QuestionMark = new Token("?"),
             Return = new Token("return"),
             Comma = new Token(",");
 

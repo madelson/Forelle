@@ -5,7 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Forelle.Core.Tests.Parsing
+namespace Forelle.Tests.Parsing
 {
     using Forelle.Parsing;
     using Medallion.Collections;
