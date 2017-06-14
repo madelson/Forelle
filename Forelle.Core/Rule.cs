@@ -44,6 +44,9 @@ namespace Forelle
             mappedRules: null
         );
 
+        internal static ExtendedRuleInfo Unmapped { get; } = Empty.Update(mappedRules: Medallion.Collections.Empty.Array<Rule>());
+        internal static ExtendedRuleInfo RightAssociative { get; } = Create(isRightAssociative: true);
+
         private ExtendedRuleInfo(
             bool isRightAssociative,
             ReadOnlyCollection<ParserStateVariableRequirement> parserStateRequirements,
@@ -126,7 +129,7 @@ namespace Forelle
 
             if (this.MappedRules != null)
             {
-                parts.Add($"PARSE AS {{ {(this.MappedRules.Count == 0 ? " " : string.Join(", ", this.MappedRules))} }}");
+                parts.Add($"PARSE AS {{{(this.MappedRules.Count == 0 ? string.Empty : $" {string.Join(", ", this.MappedRules)} ")}}}");
             }
 
             return parts.Count > 0 ? $"{{ {string.Join(", ", parts)} }}" : string.Empty;

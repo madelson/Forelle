@@ -57,6 +57,7 @@
     <Compile Include="Parsing\AliasHelperTest.cs" />
     <Compile Include="Parsing\FirstFollowCalculatorTest.cs" />
     <Compile Include="Parsing\GrammarValidatorTest.cs" />
+    <Compile Include="Parsing\LeftRecursionRewriterTest.cs" />
     <Compile Include="Parsing\StartSymbolAdderTest.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="RuleTest.cs" />
