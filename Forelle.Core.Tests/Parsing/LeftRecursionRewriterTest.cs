@@ -14,7 +14,7 @@ namespace Forelle.Tests.Parsing
     public class LeftRecursionRewriterTest
     {
         [Test]
-        public void BasicTest()
+        public void TestLeftRecursionRewrite()
         {
             var rules = new Rules
             {
