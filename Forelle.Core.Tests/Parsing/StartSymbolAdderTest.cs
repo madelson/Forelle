@@ -28,9 +28,9 @@ namespace Forelle.Tests.Parsing
                 .Select(r => r.ToString())
                 .CollectionShouldEqual(new[]
                 {
-                    "`Start<A> -> A `End<A>",
-                    "`Start<B> -> B `End<B>",
-                    "`Start<Exp> -> Exp `End<Exp>",
+                    "`Start<A> -> A `End<A> { PARSE AS {} }",
+                    "`Start<B> -> B `End<B> { PARSE AS {} }",
+                    "`Start<Exp> -> Exp `End<Exp> { PARSE AS {} }",
                 });
         }
     }

@@ -21,8 +21,8 @@ namespace Forelle.Parsing
                     .Distinct()
                     .Select(s => new Rule(
                         NonTerminal.CreateSynthetic($"Start<{s.Name}>", new StartSymbolInfo(s)),
-                        s,
-                        Token.CreateSynthetic($"End<{s.Name}>", new EndSymbolTokenInfo(s))
+                        new Symbol[] { s, Token.CreateSynthetic($"End<{s.Name}>", new EndSymbolTokenInfo(s)) },
+                        ExtendedRuleInfo.Unmapped
                     ))
                 )
                 .ToList();
