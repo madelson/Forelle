@@ -81,18 +81,8 @@ namespace Forelle.Parsing
         {
             // start everything with an empty follow set
             var followSets = allSymbols.ToDictionary(s => s, s => new HashSet<Token>());
-
-            // for each start symbol, add the corresponding final token as the follow set
-            foreach (var rule in rules)
-            {
-                if (rule.Produced.SyntheticInfo is StartSymbolInfo startInfo)
-                {
-                    // a start rule looks like Start<T> -> T End<T>, so we will add End<T> to Follow(T)
-                    followSets[startInfo.Symbol].Add((Token)rule.Symbols.Last());
-                }
-            }
             
-            // now iteratively build up the remaining follow sets
+            // now iteratively build up the follow sets
 
             // NOTE: this could be more efficient because everything relating to first sets won't do anything new after the first
             // pass. We could thus move to a two-pass approach where the first pass runs once and the second pass just propagates back
@@ -126,7 +116,7 @@ namespace Forelle.Parsing
                             }
                         }
 
-                        // if there are no non-null symbols between i and the end of the rule, then
+                        // if there are no non-nullable symbols between i and the end of the rule, then
                         // we add the follow of the produced symbol to the follow of i
                         if (!foundNonNullableFollowingSymbol && rule.Symbols[i] != rule.Produced)
                         {
