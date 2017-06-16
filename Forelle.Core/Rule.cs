@@ -207,9 +207,15 @@ namespace Forelle
             }
         }
 
+        // for rules and symbols, we use referential equality because each gets created exactly once. However, for remainders we
+        // use value equality so that equivalent remainders of the same rule compare as equal
+
         public override bool Equals(object obj) => obj is RuleRemainder rule && Equals(this.Rule, rule.Rule) && this.Start == rule.Start;
 
         public override int GetHashCode() => (this.Rule, this.Start).GetHashCode();
+
+        public static bool operator ==(RuleRemainder @this, RuleRemainder that) => EqualityComparer<RuleRemainder>.Default.Equals(@this, that);
+        public static bool operator !=(RuleRemainder @this, RuleRemainder that) => !(@this == that);
 
         public override string ToString() =>
             $"{this.Produced} -> {(this.Start > 0 ? "... " : string.Empty)}{string.Join(" ", this.Symbols)}{this.Rule.GetExtendedRuleInfoString()}";

@@ -10,12 +10,13 @@ namespace Forelle.Parsing
     /// </summary>
     internal sealed class StartSymbolInfo : SyntheticSymbolInfo
     {
-        public StartSymbolInfo(NonTerminal symbol)
+        public StartSymbolInfo(Token endToken)
         {
-            this.Symbol = symbol ?? throw new ArgumentNullException(nameof(symbol));
+            this.EndToken = endToken ?? throw new ArgumentNullException(nameof(endToken));
         }
 
-        public NonTerminal Symbol { get; }
+        public Token EndToken { get; }
+        public NonTerminal Symbol => ((EndSymbolTokenInfo)this.EndToken.SyntheticInfo).Symbol;
     }
 
     internal sealed class EndSymbolTokenInfo : SyntheticSymbolInfo

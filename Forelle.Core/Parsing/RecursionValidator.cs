@@ -158,13 +158,15 @@ namespace Forelle.Parsing
                 // find alias => aliased => ... paths
                 .Select(
                     s => Traverse.Along(s, a => this._aliases.TryGetValue(a, out var aliased) ? aliased : null)
-                        // a traversed cycle is infinite. However, once we see N + 1 elements we know there has been a repeat.
-                        // We take a full 2N elements so that all elements that are part of the cycle appear at least twice
-                        .Take(2 * this._aliases.Count)
+                        // a traversed cycle is infinite. A non-cycle can have at most N + 1 elements where N is the number
+                        // of aliases (+1 for the last alias in the chain which aliases a non-alias). Thus, once we see more 
+                        // than N + 1 elements we know there has been a repeat. We take a full 2(N + 1) elements so that all 
+                        // elements that are part of the cycle appear at least twice
+                        .Take(2 * (this._aliases.Count + 1))
                         .ToArray()
                 )
                 // take only those with repeats (cycles)
-                .Where(s => s.Length > this._aliases.Count)
+                .Where(s => s.Length > this._aliases.Count + 1)
                 // in each cycle, find the lowest element whose count appears twice. This will be used to identify the cycle
                 // and eliminate duplicates. For example, we might find both X => A => B => A and Y => A => B => A
                 .Select(s => (sequence: s, keySymbol: s.GroupBy(e => e).Where(g => g.Count() > 1).MinBy(g => g.Key.Name).Key))

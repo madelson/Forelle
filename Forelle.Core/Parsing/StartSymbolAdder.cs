@@ -19,11 +19,15 @@ namespace Forelle.Parsing
             return rules.Concat(
                 rules.Select(r => r.Produced)
                     .Distinct()
-                    .Select(s => new Rule(
-                        NonTerminal.CreateSynthetic($"Start<{s.Name}>", new StartSymbolInfo(s)),
-                        new Symbol[] { s, Token.CreateSynthetic($"End<{s.Name}>", new EndSymbolTokenInfo(s)) },
-                        ExtendedRuleInfo.Unmapped
-                    ))
+                    .Select(s =>
+                    {
+                        var endToken = Token.CreateSynthetic($"End<{s.Name}>", new EndSymbolTokenInfo(s));
+                        return new Rule(
+                            NonTerminal.CreateSynthetic($"Start<{s.Name}>", new StartSymbolInfo(endToken)),
+                            new Symbol[] { s, endToken },
+                            ExtendedRuleInfo.Unmapped
+                        );
+                    })
                 )
                 .ToList();
         }

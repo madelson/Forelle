@@ -12,13 +12,13 @@ namespace Forelle.Parsing
     internal class DiscriminatorFirstFollowProviderBuilder : IFirstFollowProvider
     {
         private readonly IFirstFollowProvider _baseProvider;
-        private readonly Dictionary<NonTerminal, ImmutableHashSet<Token>> _addedFirstSets;
+        private readonly Dictionary<NonTerminal, ImmutableHashSet<Token>> _addedFirstSets = new Dictionary<NonTerminal, ImmutableHashSet<Token>>();
         /// <summary>
         /// Since discriminator and discriminator prefix tokens never appear on the right-hand side of a rule, there is no reason
         /// to think about FOLLOW(`TX). Instead, we should consider only FOLLOW(`TX -> x) for each rule `TX -> x. The advantage of this is
         /// that we get better differentiation: we can now distinguish between multiple nullable rules if they have different follows
         /// </summary>
-        private readonly Dictionary<Rule, ImmutableHashSet<Token>> _addedFollowSets;
+        private readonly Dictionary<Rule, ImmutableHashSet<Token>> _addedFollowSets = new Dictionary<Rule, ImmutableHashSet<Token>>();
 
         public DiscriminatorFirstFollowProviderBuilder(IFirstFollowProvider baseProvider)
         {

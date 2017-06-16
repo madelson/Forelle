@@ -96,5 +96,21 @@ namespace Forelle.Tests.Parsing
                 "Invalid recursive cycle found: N -> O -> N"
             });
         }
+        
+        // verifies a tricky bug in cycle detection
+        [Test]
+        public void TestValidGrammarWithOneAlias()
+        {
+            var rules = new Rules
+            {
+                { Exp, Id },
+                { Exp, UnOp },
+                { UnOp, Minus, Exp },
+                { A, Plus },
+            };
+
+            GrammarValidator.Validate(rules, out var errors).ShouldEqual(true, errors != null ? string.Join(Environment.NewLine, errors) : null);
+            errors.ShouldEqual(null);
+        }
     }
 }
