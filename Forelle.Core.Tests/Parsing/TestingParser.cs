@@ -79,6 +79,12 @@ namespace Forelle.Tests.Parsing
                 case TokenLookaheadNode tokenNode:
                     var nextToken = this.Peek();
                     return this.Parse(tokenNode.Mapping[nextToken]);
+                case ParsePrefixSymbolsNode prefixNode:
+                    foreach (var prefixSymbol in prefixNode.PrefixSymbols)
+                    {
+                        this.Parse(prefixSymbol);
+                    }
+                    return this.Parse(prefixNode.SuffixNode);
                 default:
                     throw new InvalidOperationException("Unexpected node " + node.GetType());
             }

@@ -42,6 +42,29 @@ namespace Forelle.Tests.Parsing
                 .ShouldEqual("Exp(BinOp(Exp((, Exp(ID), )), +, Exp(BinOp(Exp(UnOp(-, Exp(ID))), *, Exp(ID)))))");
         }
 
+        /// <summary>
+        /// A simple grammar that is not LL(1) due to a common set of prefix symbols
+        /// in rules for the same non-terminal
+        /// </summary>
+        [Test]
+        public void TestCommonPrefixGrammar()
+        {
+            var rules = new Rules
+            {
+                { A, Id, A, B, Plus },
+                { A, Id, A, B, Minus },
+                { A, Times },
+                { B, SemiColon }
+            };
+
+            var (parser, errors) = CreateParser(rules);
+            Assert.IsEmpty(errors);
+
+            parser.Parse(new[] { Id, Id, Times, SemiColon, Plus, SemiColon, Minus }, A);
+            parser.Parsed.ToString()
+                .ShouldEqual("A(ID, A(ID, A(*), B(;), +), B(;), -)");
+        }
+
         private static (TestingParser parser, List<string> errors) CreateParser(Rules rules)
         {
             if (!GrammarValidator.Validate(rules, out var validationErrors))

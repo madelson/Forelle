@@ -106,6 +106,23 @@ namespace Forelle.Parsing
 
         private IParserNode CreateNonLL1ParserNode(Token lookaheadToken, IReadOnlyList<RuleRemainder> rules, ImmutableList<Symbol> prefix)
         {
+            // see if we can find a common prefix among all rules. If we can, we'll just parse the prefix
+            // and then follow up by parsing the remainder
+            var prefixLength = Enumerable.Range(0, count: rules.Min(r => r.Symbols.Count))
+                .TakeWhile(i => rules.Skip(1).All(r => r.Symbols[i] == rules[0].Symbols[i]))
+                .Select(i => i + 1)
+                .LastOrDefault();
+
+            if (prefixLength > 0)
+            {
+                var commonPrefix = rules[0].Symbols.Take(prefixLength);
+                var suffixNode = this.CreateParserNode(
+                    rules.Select(r => new RuleRemainder(r.Rule, r.Start + prefixLength)).ToArray(),
+                    prefix: prefix.AddRange(commonPrefix)
+                );
+                return new ParsePrefixSymbolsNode(prefixSymbols: commonPrefix, suffixNode: suffixNode);
+            }
+
             throw new NotImplementedException();
         }
     }
