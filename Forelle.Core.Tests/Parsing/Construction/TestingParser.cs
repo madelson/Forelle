@@ -6,7 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Forelle.Tests.Parsing
+namespace Forelle.Tests.Parsing.Construction
 {
     internal class TestingParser
     {

@@ -5,7 +5,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
 
-namespace Forelle.Parsing
+namespace Forelle.Parsing.Construction
 {
     /// <summary>
     /// Implements the core Forelle parser generation algorithm
@@ -106,6 +106,13 @@ namespace Forelle.Parsing
 
         private IParserNode CreateNonLL1ParserNode(Token lookaheadToken, IReadOnlyList<RuleRemainder> rules, ImmutableList<Symbol> prefix)
         {
+            return this.TryCreatePrefixParserNode(lookaheadToken, rules, prefix)
+                ?? this.TryCreateDiscriminatorPrefixParserNode(lookaheadToken, rules, prefix)
+                ?? throw new NotImplementedException();
+        }
+
+        private IParserNode TryCreatePrefixParserNode(Token lookaheadToken, IReadOnlyList<RuleRemainder> rules, ImmutableList<Symbol> prefix)
+        {
             // see if we can find a common prefix among all rules. If we can, we'll just parse the prefix
             // and then follow up by parsing the remainder
             var prefixLength = Enumerable.Range(0, count: rules.Min(r => r.Symbols.Count))
@@ -123,6 +130,16 @@ namespace Forelle.Parsing
                 return new ParsePrefixSymbolsNode(prefixSymbols: commonPrefix, suffixNode: suffixNode);
             }
 
+            return null;
+        }
+
+        private IParserNode TryCreateDiscriminatorPrefixParserNode(Token lookaheadToken, IReadOnlyList<RuleRemainder> rules, ImmutableList<Symbol> prefix)
+        {
+            throw new NotImplementedException();
+        }
+
+        private IParserNode TryCreateDiscriminatorLookaheadParserNode(Token lookaheadtoken, IReadOnlyList<RuleRemainder> rules, ImmutableList<Symbol> prefix)
+        {
             throw new NotImplementedException();
         }
     }

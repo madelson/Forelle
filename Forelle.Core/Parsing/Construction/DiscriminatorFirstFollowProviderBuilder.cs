@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Text;
 
-namespace Forelle.Parsing
+namespace Forelle.Parsing.Construction
 {
     /// <summary>
     /// Implements a <see cref="IFirstFollowProvider"/> to which discriminator symbols

@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 
-namespace Forelle.Parsing
+namespace Forelle.Parsing.Preprocessing
 {
     /// <summary>
     /// Rewrites simple left-recursive rules so that the grammar is not left-recursive

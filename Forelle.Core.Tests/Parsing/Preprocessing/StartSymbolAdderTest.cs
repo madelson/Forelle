@@ -6,7 +6,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Forelle.Parsing;
 
-namespace Forelle.Tests.Parsing
+namespace Forelle.Tests.Parsing.Preprocessing
 {
     using static TestGrammar;
 

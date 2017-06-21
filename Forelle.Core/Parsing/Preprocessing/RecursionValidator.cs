@@ -6,7 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Forelle.Parsing
+namespace Forelle.Parsing.Preprocessing
 {
     internal class RecursionValidator
     {

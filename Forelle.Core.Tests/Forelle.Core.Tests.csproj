@@ -54,13 +54,13 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Parsing\AliasHelperTest.cs" />
+    <Compile Include="Parsing\Preprocessing\AliasHelperTest.cs" />
     <Compile Include="Parsing\FirstFollowCalculatorTest.cs" />
-    <Compile Include="Parsing\GrammarValidatorTest.cs" />
-    <Compile Include="Parsing\LeftRecursionRewriterTest.cs" />
-    <Compile Include="Parsing\ParserGeneratorTest.cs" />
-    <Compile Include="Parsing\StartSymbolAdderTest.cs" />
-    <Compile Include="Parsing\TestingParser.cs" />
+    <Compile Include="Parsing\Preprocessing\GrammarValidatorTest.cs" />
+    <Compile Include="Parsing\Preprocessing\LeftRecursionRewriterTest.cs" />
+    <Compile Include="Parsing\Construction\ParserGeneratorTest.cs" />
+    <Compile Include="Parsing\Preprocessing\StartSymbolAdderTest.cs" />
+    <Compile Include="Parsing\Construction\TestingParser.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="RuleTest.cs" />
     <Compile Include="SymbolTest.cs" />

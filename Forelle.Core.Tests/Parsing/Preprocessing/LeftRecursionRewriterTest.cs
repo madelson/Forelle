@@ -5,9 +5,10 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Forelle.Tests.Parsing
+namespace Forelle.Tests.Parsing.Preprocessing
 {
     using Forelle.Parsing;
+    using Forelle.Parsing.Preprocessing;
     using Medallion.Collections;
     using static TestGrammar;
 

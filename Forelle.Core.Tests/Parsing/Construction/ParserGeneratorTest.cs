@@ -6,8 +6,10 @@ using System.Threading.Tasks;
 using Forelle.Parsing;
 using NUnit.Framework;
 
-namespace Forelle.Tests.Parsing
+namespace Forelle.Tests.Parsing.Construction
 {
+    using Forelle.Parsing.Construction;
+    using Forelle.Parsing.Preprocessing;
     using static TestGrammar;
 
     public class ParserGeneratorTest
