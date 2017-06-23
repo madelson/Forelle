@@ -7,6 +7,19 @@ using System.Text;
 
 namespace Forelle.Parsing.Construction
 {
+    // idea: prefix only gets used for ambiguity resolution. Rather than cache by prefix and therefore repeat work,
+    // we could instead cache only by node. When we retrieve a node from the cache, we can note the prefix that goes with it.
+    // When we reach an ambiguity point, we can immediately create a stub node. Later, can we flow prefixes down to all stub nodes,
+    // and then replace the stub nodes with the appropriate ambiguity resolutions? Flowing down would be looking for all paths from
+    // the top level, starting with the top-level prefix and adding on implied prefixes as we go (e. g. a prefix-parse node adds an implied prefix)
+
+    // alternatively, can we just infer the prefix(es) from the set of rules we are choosing from? We can expand out partial rules, and inline
+    // discriminators. 
+
+    // In some cases we can even use the lookahead token to further expand backwards to give more context. E. g. for dangling else,
+    // we'll be choosing between "if E then E" and "if E then E else E". We realize that else is only in the follow of the first rule in the instance
+    // where there was a surrounding if, so the full context becomes if E then if E then E else E
+
     /// <summary>
     /// Implements the core Forelle parser generation algorithm
     /// </summary>
