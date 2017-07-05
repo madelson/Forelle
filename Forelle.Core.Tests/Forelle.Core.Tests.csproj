@@ -54,6 +54,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Parsing\Construction\DiscriminatorHelperTest.cs" />
     <Compile Include="Parsing\Preprocessing\AliasHelperTest.cs" />
     <Compile Include="Parsing\FirstFollowCalculatorTest.cs" />
     <Compile Include="Parsing\Preprocessing\GrammarValidatorTest.cs" />

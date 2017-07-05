@@ -84,5 +84,8 @@ namespace Forelle.Tests
         {
             this.Add(new Rule(produced, symbols));
         }
+
+        public Dictionary<NonTerminal, IReadOnlyList<Rule>> ToRulesByProduced() =>
+            this.GroupBy(r => r.Produced).ToDictionary(g => g.Key, g => (IReadOnlyList<Rule>)g.ToArray());
     }
 }
