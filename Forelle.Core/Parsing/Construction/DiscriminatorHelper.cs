@@ -82,20 +82,23 @@ namespace Forelle.Parsing.Construction
                         var newSuffix = suffix.Pop();
                         var innerRules = this._rules[(NonTerminal)nextSuffixSymbol]
                             .Where(r => this._firstFollowProvider.NextOf(r).Contains(prefixToken));
+                        var success = true;
                         foreach (var innerRule in innerRules)
                         {
-                            if (!this.TryGatherPostTokenSuffixes(prefixToken, new RuleRemainder(innerRule, start: 0), newSuffix, result))
-                            {
-                                return false;
-                            }
+                            // we don't bail immediately on failure here because failures can be turned into successes at the
+                            // end of the similar loop below
+                            success &= this.TryGatherPostTokenSuffixes(prefixToken, new RuleRemainder(innerRule, start: 0), newSuffix, result);
                         }
+                        return success;
                     }
                 }
                 else
                 {
                     // if we get here, that means that we are trying to strip out our prefix token,
-                    // but we've reached the end of the rule (meaning that the token is actually the follow)
-                    return false;
+                    // but we've reached the end of the rule and have no suffix. This means that the prefix
+                    // token might appear in the follow. If it does, that's a problem because we cannot
+                    // create a complete suffix set
+                    return !this._firstFollowProvider.FollowOf(rule.Rule).Contains(prefixToken);
                 }
             }
             else if (rule.Symbols[0] is Token)
@@ -121,13 +124,18 @@ namespace Forelle.Parsing.Construction
 
                 var innerRules = this._rules[(NonTerminal)rule.Symbols[0]]
                     .Where(r => this._firstFollowProvider.NextOf(r).Contains(prefixToken));
+                var success = true;
                 foreach (var innerRule in innerRules)
                 {
-                    if (!this.TryGatherPostTokenSuffixes(prefixToken, new RuleRemainder(innerRule, start: 0), newSuffix, result))
-                    {
-                        return false;
-                    }
+                    success &= this.TryGatherPostTokenSuffixes(prefixToken, new RuleRemainder(innerRule, start: 0), newSuffix, result);
                 }
+                // the return value here is true if all recursive calls succeeded or if the current rule cannot 
+                // be followed by the prefix token. Note that we don't really expect this to come into play since the way
+                // follow sets are computed we would expect that any time false was returned by the recursive call then
+                // prefixToken would be in the follow (since the follow of the outer rule should incorporate follows of all
+                // terminating inner rules). However, checking this check does no harm and doesn't make as many assumptions about the
+                // follow set calculation
+                return success || !this._firstFollowProvider.FollowOf(rule.Rule).Contains(prefixToken);
             }
 
             return true;
