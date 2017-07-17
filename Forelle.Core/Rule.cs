@@ -150,6 +150,10 @@ namespace Forelle
         public bool RequiredValue { get; }
 
         public override string ToString() => $"REQUIRE {(this.RequiredValue ? string.Empty : "!")}'{this.VariableName}'";
+
+        public override bool Equals(object obj) => obj is ParserStateVariableRequirement that && (this.VariableName, this.RequiredValue).Equals((that.VariableName, that.RequiredValue));
+
+        public override int GetHashCode() => (this.VariableName, this.RequiredValue).GetHashCode();
     }
 
     public sealed class ParserStateVariableAction
@@ -167,6 +171,10 @@ namespace Forelle
         public ParserStateVariableActionKind Kind { get; }
 
         public override string ToString() => $"{this.Kind.ToString().ToUpperInvariant()} '{this.VariableName}'";
+
+        public override bool Equals(object obj) => obj is ParserStateVariableAction that && (this.VariableName, this.Kind).Equals((that.VariableName, that.Kind));
+
+        public override int GetHashCode() => (this.VariableName, this.Kind).GetHashCode();
     }
 
     public enum ParserStateVariableActionKind

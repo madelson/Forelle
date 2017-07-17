@@ -43,11 +43,11 @@ namespace Forelle.Parsing
             return provider.NextOf(new RuleRemainder(rule, start: 0));
         }
 
-        public static IImmutableSet<Token> NextOf(this IFirstFollowProvider provider, RuleRemainder partialRule)
+        public static IImmutableSet<Token> NextOf(this IFirstFollowProvider provider, RuleRemainder ruleRemainder)
         {
-            var firsts = provider.FirstOf(partialRule.Symbols);
+            var firsts = provider.FirstOf(ruleRemainder.Symbols);
             return firsts.ContainsNull()
-                ? firsts.RemoveNull().Union(provider.FollowOf(partialRule.Rule))
+                ? firsts.RemoveNull().Union(provider.FollowOf(ruleRemainder.Rule))
                 : firsts;
         }
     }

@@ -15,7 +15,7 @@ namespace Forelle.Tests.Parsing.Construction
         private IReadOnlyList<Token> _tokens;
         private Token _endToken;
 
-        private int _index;
+        private int _index, _lookaheadIndex;
         private readonly Stack<SyntaxNode> _syntaxNodes = new Stack<SyntaxNode>();
 
         public TestingParser(IReadOnlyDictionary<NonTerminal, IParserNode> nodes)
@@ -32,6 +32,7 @@ namespace Forelle.Tests.Parsing.Construction
             this._endToken = ((StartSymbolInfo)startSymbol.SyntheticInfo).EndToken;
 
             this._index = 0;
+            this._lookaheadIndex = -1;
             this._syntaxNodes.Clear();
 
             this.Parse(startSymbol);
@@ -85,6 +86,29 @@ namespace Forelle.Tests.Parsing.Construction
                         this.Parse(prefixSymbol);
                     }
                     return this.Parse(prefixNode.SuffixNode);
+                case GrammarLookaheadNode grammarLookaheadNode:
+                    if (this.IsInLookahead)
+                    {
+                        this.Eat(grammarLookaheadNode.Token);
+                        var ruleUsed = this.Parse(grammarLookaheadNode.Discriminator);
+                        // TODO this potentially should perform any rule actions (e. g. state variables)
+                        return grammarLookaheadNode.Mapping[ruleUsed];
+                    }
+                    else
+                    {
+                        this._lookaheadIndex = this._index;
+
+                        this.Eat(grammarLookaheadNode.Token);
+                        var ruleUsed = this.Parse(grammarLookaheadNode.Discriminator);
+
+                        this._lookaheadIndex = -1;
+                        
+                        return this.Parse(new RuleRemainder(grammarLookaheadNode.Mapping[ruleUsed], start: 0));
+                    }
+                case MapResultNode mapResultNode:
+                    if (!this.IsInLookahead) { throw new InvalidOperationException($"Encountered {mapResultNode} outside of lookahead"); }
+                    var innerResult = this.Parse(mapResultNode.Mapped);
+                    return this.Parse(mapResultNode.Mapping[innerResult]);
                 default:
                     throw new InvalidOperationException("Unexpected node " + node.GetType());
             }
@@ -92,6 +116,8 @@ namespace Forelle.Tests.Parsing.Construction
 
         private void Process(Rule rule)
         {
+            if (this.IsInLookahead) { return;}
+
             if (rule.ExtendedInfo.MappedRules == null)
             {
                 var children = new SyntaxNode[rule.Symbols.Count];
@@ -110,18 +136,36 @@ namespace Forelle.Tests.Parsing.Construction
             }
         }
 
+        private bool IsInLookahead
+        {
+            get
+            {
+                if (this._lookaheadIndex < 0) { return false; }
+                if (this._lookaheadIndex < this._index) { throw new InvalidOperationException($"bad state: index: {this._index}, lookahead: {this._lookaheadIndex}"); }
+                return true;
+            }
+        }
+
         private Token Peek()
         {
-            var index = this._index;
+            var index = this.IsInLookahead ? this._lookaheadIndex : this._index;
             return index == this._tokens.Count ? this._endToken : this._tokens[index];
         }
 
-        private void Eat(Token token)
+        private void Eat(Token expectedToken)
         {
             var nextToken = this.Peek();
-            this._syntaxNodes.Push(new SyntaxNode(nextToken));
+            if (nextToken != expectedToken) { throw new InvalidOperationException($"Expected {expectedToken} but found {nextToken}"); }
 
-            ++this._index;
+            if (this.IsInLookahead)
+            {
+                ++this._lookaheadIndex;
+            }
+            else
+            {
+                this._syntaxNodes.Push(new SyntaxNode(nextToken));
+                ++this._index;
+            }
         }
     }
 

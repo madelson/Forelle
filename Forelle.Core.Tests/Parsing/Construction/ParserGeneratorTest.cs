@@ -67,6 +67,33 @@ namespace Forelle.Tests.Parsing.Construction
                 .ShouldEqual("A(ID, A(ID, A(*), B(;), +), B(;), -)");
         }
 
+        [Test]
+        public void TestExpressionVsStatementListConflict()
+        {
+            var rules = new Rules
+            {
+                { Stmt, Exp, SemiColon },
+                { Exp, Id },
+                { Exp, OpenBracket, ExpList, CloseBracket },
+                { Exp, OpenBracket, Stmt, StmtList, CloseBracket },
+                { ExpList },
+                { ExpList, Exp, ExpList },
+                { StmtList },
+                { StmtList, Stmt, StmtList }
+            };
+
+            var (parser, errors) = CreateParser(rules);
+            Assert.IsEmpty(errors);
+
+            // [];
+            parser.Parse(new[] { OpenBracket, CloseBracket, SemiColon }, Stmt);
+            parser.Parsed.ToString().ShouldEqual("Stmt(Exp([, List<Exp>, ]), ;)");
+
+            // [ [ id; ] [ [] id ] ];
+            parser.Parse(new[] { OpenBracket, OpenBracket, Id, SemiColon, CloseBracket, OpenBracket, OpenBracket, CloseBracket, Id, CloseBracket, CloseBracket, SemiColon }, Stmt);
+            parser.Parsed.ToString().ShouldEqual("Stmt(Exp([, List<Exp>(Exp([, Stmt(Exp(ID), ;), List<Stmt>, ]), List<Exp>(Exp([, List<Exp>(Exp([, List<Exp>, ]), List<Exp>(Exp(ID), List<Exp>)), ]), List<Exp>)), ]), ;)");
+        }
+
         private static (TestingParser parser, List<string> errors) CreateParser(Rules rules)
         {
             if (!GrammarValidator.Validate(rules, out var validationErrors))

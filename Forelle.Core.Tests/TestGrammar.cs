@@ -21,10 +21,16 @@ namespace Forelle.Tests
             Colon = new Token(":"),
             QuestionMark = new Token("?"),
             Return = new Token("return"),
-            Comma = new Token(",");
+            Comma = new Token(","),
+            OpenBracket = new Token("["),
+            CloseBracket = new Token("]"),
+            OpenBrace = new Token("{"),
+            CloseBrace = new Token("}");
 
         public static readonly NonTerminal Exp = new NonTerminal("Exp"),
+            ExpList = new NonTerminal("List<Exp>"),
             Stmt = new NonTerminal("Stmt"),
+            StmtList = new NonTerminal("List<Stmt>"),
             ArgList = new NonTerminal("List<Arg>"),
             BinOp = new NonTerminal("BinOp"),
             UnOp = new NonTerminal("UnOp"),
