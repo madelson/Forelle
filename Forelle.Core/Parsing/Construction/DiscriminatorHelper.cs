@@ -31,6 +31,7 @@ namespace Forelle.Parsing.Construction
             throw new NotImplementedException();
         }
 
+        // TODO return list to enforce order?
         /// <summary>
         /// Gathers the set of <see cref="Symbol"/> lists which could form the remainder after consuming
         /// a <paramref name="prefixToken"/>

@@ -29,14 +29,11 @@ namespace Forelle.Parsing.Construction
         private readonly DiscriminatorFirstFollowProviderBuilder _firstFollow;
         private readonly DiscriminatorHelper _discriminatorHelper;
 
-        private readonly Queue<NonTerminal> _remainingSymbols;
-        private readonly Dictionary<NonTerminal, IParserNode> _nodes = new Dictionary<NonTerminal, IParserNode>();
+        private readonly Queue<NodeContext> _generatorQueue = new Queue<NodeContext>();
         private readonly List<string> _errors = new List<string>();
 
-        private readonly Dictionary<IReadOnlyList<RuleRemainder>, IParserNode> _nodeCache
-            = new Dictionary<IReadOnlyList<RuleRemainder>, IParserNode>(
-                EqualityComparers.GetCollectionComparer<RuleRemainder>()
-            );
+        private readonly Dictionary<NodeContext, ParserNode> _nodesByContext = new Dictionary<NodeContext, ParserNode>();
+        private readonly Dictionary<ReferenceNode, ReferenceContext> _referenceNodeContexts = new Dictionary<ReferenceNode, ReferenceContext>();
 
         private ParserGenerator(IReadOnlyList<Rule> rules)
         {
@@ -47,48 +44,73 @@ namespace Forelle.Parsing.Construction
             this._firstFollow = new DiscriminatorFirstFollowProviderBuilder(baseFirstFollow);
 
             this._discriminatorHelper = new DiscriminatorHelper(this._rulesByProduced, this._firstFollow);
-
-            this._remainingSymbols = new Queue<NonTerminal>(this._rulesByProduced.Keys);
         }
 
-        public static (Dictionary<NonTerminal, IParserNode> nodes, List<string> errors) CreateParser(IReadOnlyList<Rule> rules)
+        public static (Dictionary<StartSymbolInfo, ParserNode> nodes, List<string> errors) CreateParser(IReadOnlyList<Rule> rules)
         {
             var generator = new ParserGenerator(rules);
-            generator.Generate();
+            var nodes = generator.Generate();
 
-            return (nodes: generator._nodes, errors: generator._errors);
+            return (nodes: nodes, errors: generator._errors);
         }
 
-        private void Generate()
+        private Dictionary<StartSymbolInfo, ParserNode> Generate()
         {
-            while (this._remainingSymbols.Count > 0)
+            // pre-populate the generator queue with contexts for each start symbol
+            var startSymbolContexts = this._rulesByProduced.Select(kvp => (startInfo: kvp.Key.SyntheticInfo as StartSymbolInfo, rules: kvp.Value))
+                .Where(t => t.startInfo != null)
+                .ToDictionary(t => t.startInfo, t => new NodeContext(t.rules.Select(r => new RuleRemainder(r, start: 0))));
+            foreach (var context in startSymbolContexts.Values)
             {
-                var next = this._remainingSymbols.Dequeue();
-                this._nodes.Add(
-                    next, 
-                    this.CreateParserNode(this._rulesByProduced[next].Select(r => new RuleRemainder(r, start: 0)).ToArray())
-                );
+                this._generatorQueue.Enqueue(context);
+            }
+
+            // continue generating nodes until the queue is empty
+            while (this._generatorQueue.Count > 0)
+            {
+                var nextContext = this._generatorQueue.Dequeue();
+                if (!this._nodesByContext.ContainsKey(nextContext))
+                {
+                    this._nodesByContext.Add(nextContext, this.CreateParserNode(nextContext));
+                }
+            }
+
+            // link up all dangling reference nodes
+            this.ConnectReferences();
+
+            return startSymbolContexts.ToDictionary(kvp => kvp.Key, kvp => this._nodesByContext[kvp.Value]);
+        }
+
+        private void ConnectReferences()
+        {
+            // note: since no references are filled in yet, we can't possibly have circular paths. Therefore
+            // the depth-first traversal WILL terminate
+            var allReferences = this._nodesByContext.Values
+                .SelectMany(root => Traverse.DepthFirst(root, n => n is ReferenceNode ? Enumerable.Empty<ParserNode>() : n.ChildNodes))
+                .OfType<ReferenceNode>()
+                .Distinct()
+                .ToArray();
+
+            foreach (var reference in allReferences)
+            {
+                var referenceContext = this._referenceNodeContexts[reference];
+                reference.SetValue(this._nodesByContext[referenceContext.NodeContext.Value]);
             }
         }
 
-        private IParserNode CreateParserNode(IReadOnlyList<RuleRemainder> rules)
+        private ParserNode CreateParserNode(NodeContext context)
         {
-            if (this._nodeCache.TryGetValue(rules, out var existing))
-            {
-                return existing;
-            }
-
-            var node = this.CreateParserNodeNoCache(rules);
-            this._nodeCache.Add(rules, node);
-            return node;
+            return context.Lookahead == null 
+                ? this.CreateLL1OrNonLL1ReferenceParserNode(context.Rules)
+                : this.CreateNonLL1ParserNode(context.Lookahead, context.Rules);
         }
 
-        private IParserNode CreateParserNodeNoCache(IReadOnlyList<RuleRemainder> rules)
+        private ParserNode CreateLL1OrNonLL1ReferenceParserNode(IReadOnlyList<RuleRemainder> rules)
         {
             // if we only have one rule, we just parse that
             if (rules.Count == 1)
             {
-                return new ParseRuleNode(rules.Single());
+                return this.ReferenceNodeFor(rules.Single());
             }
 
             // next, see what we can do with LL(1) single-token lookahead
@@ -97,10 +119,10 @@ namespace Forelle.Parsing.Construction
                 .ToDictionary(g => g.Key, g => g.ToArray());
 
             // if there is only one entry in the table, just create a non-LL(1) node for that entry
-            // we know that this must be non-LL(1) because we already checked for the single-rule case above
+            // we know that this will be non-LL(1) because we already checked for the single-rule case above
             if (tokenLookaheadTable.Count == 1)
             {
-                return this.CreateNonLL1ParserNode(tokenLookaheadTable.Single().Key, tokenLookaheadTable.Single().Value);
+                return this.ReferenceNodeFor(new NodeContext(tokenLookaheadTable.Single().Value, tokenLookaheadTable.Single().Key));
             }
 
             // else, create a token lookahead node mapping from the table
@@ -108,13 +130,13 @@ namespace Forelle.Parsing.Construction
                 tokenLookaheadTable.ToDictionary(
                     kvp => kvp.Key,
                     kvp => kvp.Value.Length == 1
-                        ? new ParseRuleNode(kvp.Value.Single())
-                        : this.CreateNonLL1ParserNode(kvp.Key, kvp.Value)
+                        ? this.ReferenceNodeFor(kvp.Value.Single())
+                        : this.ReferenceNodeFor(new NodeContext(kvp.Value, kvp.Key))
                 )
             );
         }
 
-        private IParserNode CreateNonLL1ParserNode(Token lookaheadToken, IReadOnlyList<RuleRemainder> rules)
+        private ParserNode CreateNonLL1ParserNode(Token lookaheadToken, IReadOnlyList<RuleRemainder> rules)
         {
             return this.TryCreatePrefixParserNode(lookaheadToken, rules)
                 ?? this.TryCreateDiscriminatorPrefixParserNode(lookaheadToken, rules)
@@ -122,7 +144,7 @@ namespace Forelle.Parsing.Construction
                 ?? throw new NotImplementedException();
         }
 
-        private IParserNode TryCreatePrefixParserNode(Token lookaheadToken, IReadOnlyList<RuleRemainder> rules)
+        private ParserNode TryCreatePrefixParserNode(Token lookaheadToken, IReadOnlyList<RuleRemainder> rules)
         {
             // see if we can find a common prefix among all rules. If we can, we'll just parse the prefix
             // and then follow up by parsing the remainder
@@ -137,15 +159,17 @@ namespace Forelle.Parsing.Construction
                 // See the grammar in TestExpressionVsStatementListConflict for an example
                 && !rules[0].Symbols.Take(prefixLength).All(r => r is Token))
             {
-                var commonPrefix = rules[0].Symbols.Take(prefixLength);
-                var suffixNode = this.CreateParserNode(rules.Select(r => new RuleRemainder(r.Rule, r.Start + prefixLength)).ToArray());
-                return new ParsePrefixSymbolsNode(prefixSymbols: commonPrefix, suffixNode: suffixNode);
+                var prefix = rules[0].Symbols.Take(prefixLength)
+                    .Select(s => s is Token t ? new TokenOrParserNode(t) : new TokenOrParserNode(this.ReferenceNodeFor((NonTerminal)s)));
+
+                var suffixNode = this.ReferenceNodeFor(new NodeContext(rules.Select(r => new RuleRemainder(r.Rule, r.Start + prefixLength))));
+                return new ParsePrefixSymbolsNode(prefix: prefix, suffixNode: suffixNode);
             }
 
             return null;
         }
 
-        private IParserNode TryCreateDiscriminatorPrefixParserNode(Token lookaheadToken, IReadOnlyList<RuleRemainder> rules)
+        private ParserNode TryCreateDiscriminatorPrefixParserNode(Token lookaheadToken, IReadOnlyList<RuleRemainder> rules)
         {
             // if we are producing a discriminator, see if an existing discriminator is a prefix. This
             // lets us handle recursion within the lookahead grammar
@@ -186,11 +210,11 @@ namespace Forelle.Parsing.Construction
             if (followMapping.All(kvp => kvp.Value.Except(this._firstFollow.FollowOf(kvp.Key)).Count == 0))
             {
                 return new MapResultNode(
-                    new ParseSymbolNode(match.discriminator),
+                    this.ReferenceNodeFor(match.discriminator),
                     match.mapping.GroupBy(kvp => kvp.Value, kvp => new RuleRemainder(kvp.Key.Rule, start: kvp.Key.Start + kvp.Value.Symbols.Count))
                         .ToDictionary(
                             g => g.Key,
-                            g => this.CreateParserNode(g.ToArray())
+                            g => this.ReferenceNodeFor(new NodeContext(g))
                         )
                 );
             }
@@ -248,7 +272,7 @@ namespace Forelle.Parsing.Construction
             return result;
         }
 
-        private IParserNode TryCreateDiscriminatorLookaheadParserNode(Token lookaheadToken, IReadOnlyList<RuleRemainder> rules)
+        private ParserNode TryCreateDiscriminatorLookaheadParserNode(Token lookaheadToken, IReadOnlyList<RuleRemainder> rules)
         {
             // build a mapping of what we would see after passing by lookaheadToken to the rule that that suffix would indicate
             var suffixToRuleMapping = this.TryBuildSuffixToRuleMapping(lookaheadToken, rules);
@@ -269,12 +293,15 @@ namespace Forelle.Parsing.Construction
 
             this._rulesByProduced.Add(discriminator, rulesAndFollowSets.Keys.ToArray());
             this._firstFollow.Add(rulesAndFollowSets);
-            this._remainingSymbols.Enqueue(discriminator);
+            this._generatorQueue.Enqueue(new NodeContext(rulesAndFollowSets.Keys.Select(r => new RuleRemainder(r, start: 0))));
 
             return new GrammarLookaheadNode(
                 token: lookaheadToken,
-                discriminator: discriminator,
-                mapping: rulesAndFollowSets.Keys.ToDictionary(r => r, r => suffixToRuleMapping[r.Symbols].Rule)
+                discriminatorParse: this.ReferenceNodeFor(discriminator),
+                mapping: rulesAndFollowSets.Keys
+                    // TODO unclear if it's ok that we lose the start position of the input rules here
+                    .Select(r => (fromRule: r, toRule: suffixToRuleMapping[r.Symbols].Rule))
+                    .ToDictionary(t => t.fromRule, t => (t.toRule, this.ReferenceNodeFor(new RuleRemainder(t.toRule, start: 0))))
             );
         }
 
@@ -301,6 +328,74 @@ namespace Forelle.Parsing.Construction
                 }
             }
             return suffixToRuleMapping;
+        }
+
+        /// <summary>
+        /// Represents a context in which a <see cref="ParserNode"/> is entered. A context is composed
+        /// of a set of <see cref="RuleRemainder"/>s we are choosing between and possibly a specific
+        /// lookahead <see cref="Token"/>
+        /// </summary>
+        private struct NodeContext : IEquatable<NodeContext>
+        {
+            private static IEqualityComparer<IEnumerable<RuleRemainder>> RulesComparer = EqualityComparers.GetSequenceComparer<RuleRemainder>();
+
+            public NodeContext(IEnumerable<RuleRemainder> rules, Token lookahead = null)
+            {
+                this.Rules = (rules ?? throw new ArgumentNullException(nameof(rules))).ToArray();
+                this.Lookahead = lookahead;
+            }
+
+            public IReadOnlyList<RuleRemainder> Rules { get; }
+            public Token Lookahead { get; }
+
+            public override bool Equals(object thatObj) => thatObj is NodeContext that && this.Equals(that);
+
+            public bool Equals(NodeContext that)
+            {
+                return this.Rules.SequenceEqual(that.Rules)
+                    && this.Lookahead == that.Lookahead;
+            }
+
+            public override int GetHashCode() => (RulesComparer.GetHashCode(this.Rules), this.Lookahead?.GetHashCode()).GetHashCode();
+        }
+
+        private ParserNode ReferenceNodeFor(NodeContext nodeContext)
+        {
+            if (this._nodesByContext.TryGetValue(nodeContext, out var existing))
+            {
+                return existing;
+            }
+
+            this._generatorQueue.Enqueue(nodeContext); // will have to be computed
+
+            // return a reference to the future computation
+            var reference = new ReferenceNode();
+            this._referenceNodeContexts.Add(reference, new ReferenceContext(nodeContext));
+            return reference;
+        }
+
+        private ParserNode ReferenceNodeFor(NonTerminal nonTerminal)
+        {
+            var nodeContext = new NodeContext(this._rulesByProduced[nonTerminal].Select(r => new RuleRemainder(r, start: 0)));
+            return this.ReferenceNodeFor(nodeContext);
+        }
+
+        private ParserNode ReferenceNodeFor(RuleRemainder rule)
+        {
+            return new ParseRuleNode(
+                rule,
+                rule.Symbols.OfType<NonTerminal>().Select(this.ReferenceNodeFor)
+            );
+        }
+
+        private sealed class ReferenceContext
+        {
+            public ReferenceContext(NodeContext nodeContext)
+            {
+                this.NodeContext = nodeContext;
+            }
+
+            public NodeContext? NodeContext { get; }
         }
 
         private string DebugGrammar => string.Join(

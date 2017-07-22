@@ -10,7 +10,7 @@ namespace Forelle.Tests.Parsing.Construction
 {
     internal class TestingParser
     {
-        private readonly IReadOnlyDictionary<NonTerminal, IParserNode> _nodes;
+        private readonly IReadOnlyDictionary<StartSymbolInfo, ParserNode> _rootNodes;
 
         private IReadOnlyList<Token> _tokens;
         private Token _endToken;
@@ -18,9 +18,9 @@ namespace Forelle.Tests.Parsing.Construction
         private int _index, _lookaheadIndex;
         private readonly Stack<SyntaxNode> _syntaxNodes = new Stack<SyntaxNode>();
 
-        public TestingParser(IReadOnlyDictionary<NonTerminal, IParserNode> nodes)
+        public TestingParser(IReadOnlyDictionary<StartSymbolInfo, ParserNode> rootNodes)
         {
-            this._nodes = nodes;
+            this._rootNodes = rootNodes;
         }
 
         public SyntaxNode Parsed { get; private set; }
@@ -28,14 +28,14 @@ namespace Forelle.Tests.Parsing.Construction
         public void Parse(IReadOnlyList<Token> tokens, NonTerminal symbol)
         {
             this._tokens = tokens;
-            var startSymbol = this._nodes.Keys.Single(s => s.SyntheticInfo is StartSymbolInfo i && i.Symbol == symbol);
-            this._endToken = ((StartSymbolInfo)startSymbol.SyntheticInfo).EndToken;
+            var startSymbolInfo = this._rootNodes.Keys.Single(ssi => ssi.Symbol == symbol);
+            this._endToken = startSymbolInfo.EndToken;
 
             this._index = 0;
             this._lookaheadIndex = -1;
             this._syntaxNodes.Clear();
 
-            this.Parse(startSymbol);
+            this.Parse(this._rootNodes[startSymbolInfo]);
 
             if (this._syntaxNodes.Count != 2 && this._syntaxNodes.Peek().Symbol != this._endToken)
             {
@@ -45,65 +45,53 @@ namespace Forelle.Tests.Parsing.Construction
             this.Parsed = this._syntaxNodes.Pop();
         }
 
-        private void Parse(Symbol symbol)
-        {
-            if (symbol is Token token) { this.Eat(token); }
-            else { this.Parse((NonTerminal)symbol); }
-        }
-
-        private Rule Parse(NonTerminal symbol)
-        {
-            var ruleUsed = this.Parse(this._nodes[symbol]);
-            this.Process(ruleUsed);
-
-            return ruleUsed;
-        }
-
-        private Rule Parse(RuleRemainder rule)
-        {
-            foreach (var symbol in rule.Symbols)
-            {
-                this.Parse(symbol);
-            }
-
-            return rule.Rule;
-        }
-
-        private Rule Parse(IParserNode node)
+        private Rule Parse(ParserNode node)
         {
             switch (node)
             {
-                case ParseSymbolNode symbolNode:
-                    return this.Parse(symbolNode.Symbol);
                 case ParseRuleNode ruleNode:
-                    return this.Parse(ruleNode.Rule);
+                    var j = 0;
+                    for (var i = 0; i < ruleNode.Rule.Symbols.Count; ++i)
+                    {
+                        if (ruleNode.Rule.Symbols[i] is Token token)
+                        {
+                            this.Eat(token);
+                        }
+                        else
+                        {
+                            this.Parse(ruleNode.NonTerminalParsers[j++]);
+                        }
+                    }
+                    this.Process(ruleNode.Rule.Rule);
+                    return ruleNode.Rule.Rule;
                 case TokenLookaheadNode tokenNode:
                     var nextToken = this.Peek();
                     return this.Parse(tokenNode.Mapping[nextToken]);
                 case ParsePrefixSymbolsNode prefixNode:
-                    foreach (var prefixSymbol in prefixNode.PrefixSymbols)
+                    foreach (var prefixElement in prefixNode.Prefix)
                     {
-                        this.Parse(prefixSymbol);
+                        if (prefixElement.Token != null) { this.Eat(prefixElement.Token); }
+                        else { this.Parse(prefixElement.Node); }
                     }
                     return this.Parse(prefixNode.SuffixNode);
                 case GrammarLookaheadNode grammarLookaheadNode:
                     if (this.IsInLookahead)
                     {
                         this.Eat(grammarLookaheadNode.Token);
-                        var ruleUsed = this.Parse(grammarLookaheadNode.Discriminator);
+                        var ruleUsed = this.Parse(grammarLookaheadNode.DiscriminatorParse);
                         // TODO this potentially should perform any rule actions (e. g. state variables)
-                        return grammarLookaheadNode.Mapping[ruleUsed];
+                        return grammarLookaheadNode.RuleMapping[ruleUsed];
                     }
                     else
                     {
                         this._lookaheadIndex = this._index;
 
                         this.Eat(grammarLookaheadNode.Token);
-                        var ruleUsed = this.Parse(grammarLookaheadNode.Discriminator);
+                        var ruleUsed = this.Parse(grammarLookaheadNode.DiscriminatorParse);
 
                         this._lookaheadIndex = -1;
-                        
-                        return this.Parse(new RuleRemainder(grammarLookaheadNode.Mapping[ruleUsed], start: 0));
+
+                        return this.Parse(grammarLookaheadNode.NodeMapping[ruleUsed]);
                     }
                 case MapResultNode mapResultNode:
                     if (!this.IsInLookahead) { throw new InvalidOperationException($"Encountered {mapResultNode} outside of lookahead"); }
@@ -116,7 +104,7 @@ namespace Forelle.Tests.Parsing.Construction
 
         private void Process(Rule rule)
         {
-            if (this.IsInLookahead) { return;}
+            if (this.IsInLookahead) { return; }
 
             if (rule.ExtendedInfo.MappedRules == null)
             {
