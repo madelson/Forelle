@@ -17,6 +17,8 @@ namespace Forelle.Tests
             Minus = new Token("-"),
             Times = new Token("*"),
             Divide = new Token("/"),
+            LessThan = new Token("<"),
+            GreaterThan = new Token(">"),
             SemiColon = new Token(";"),
             Colon = new Token(":"),
             QuestionMark = new Token("?"),
@@ -34,6 +36,7 @@ namespace Forelle.Tests
             ArgList = new NonTerminal("List<Arg>"),
             BinOp = new NonTerminal("BinOp"),
             UnOp = new NonTerminal("UnOp"),
+            Cmp = new NonTerminal("Cmp"),
             PlusOrMinus = new NonTerminal("+|-"),
             TimesOrDivide = new NonTerminal("*|/"),
             A = new NonTerminal("A"),
@@ -86,6 +89,13 @@ namespace Forelle.Tests
 
     internal class Rules : Collection<Rule>
     {
+        public Rules() { }
+
+        public Rules(IEnumerable<Rule> rules)
+            : base(rules.ToList())
+        {
+        }
+
         public void Add(NonTerminal produced, params Symbol[] symbols)
         {
             this.Add(new Rule(produced, symbols));

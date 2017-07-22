@@ -2,6 +2,7 @@
 using Medallion.Collections;
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -165,19 +166,66 @@ namespace Forelle.Tests.Parsing.Construction
     internal class SyntaxNode
     {
         public SyntaxNode(Token token)
+            : this(token, Empty.Array<SyntaxNode>())
         {
-            this.Symbol = token;
-            this.Children = Empty.Array<SyntaxNode>();
         }
 
         public SyntaxNode(NonTerminal symbol, IEnumerable<SyntaxNode> children)
+            : this((Symbol)symbol, children.ToArray())
+        {
+        }
+
+        private SyntaxNode(Symbol symbol, IReadOnlyList<SyntaxNode> children)
         {
             this.Symbol = symbol;
-            this.Children = children.ToArray();
+            this.Children = children;
         }
 
         public Symbol Symbol { get; }
         public IReadOnlyList<SyntaxNode> Children { get; }
+
+        public SyntaxNode Flatten(params NonTerminal[] toFlatten)
+        {
+            var toFlattenSet = new HashSet<Symbol>(toFlatten);
+
+            IReadOnlyList<SyntaxNode> flatten(SyntaxNode node, ImmutableStack<Symbol> context)
+            {
+                if (toFlattenSet.Contains(node.Symbol) && !context.IsEmpty && context.Peek() == node.Symbol)
+                {
+                    return node.Children.SelectMany(c => flatten(c, context)).ToArray();
+                }
+
+                var newContext = context.Push(node.Symbol);
+                var flattenedChildren = node.Children.SelectMany(c => flatten(c, newContext))
+                    .ToArray();
+                return flattenedChildren.SequenceEqual(node.Children)
+                    ? new[] { node }
+                    : new[] { new SyntaxNode(node.Symbol, flattenedChildren) };
+            }
+
+            return flatten(this, ImmutableStack<Symbol>.Empty).Single();
+        }
+
+        public SyntaxNode Inline(params Symbol[] toRemove)
+        {
+            var toInlineSet = new HashSet<Symbol>(toRemove);
+
+            IReadOnlyList<SyntaxNode> inline(SyntaxNode node)
+            {
+                if (toInlineSet.Contains(node.Symbol))
+                {
+                    return node.Children.SelectMany(inline).ToArray();
+                }
+
+                var processedChildren = node.Children.SelectMany(inline)
+                    .ToArray();
+                return processedChildren.SequenceEqual(node.Children)
+                    ? new[] { node }
+                    : new[] { new SyntaxNode(node.Symbol, processedChildren) };
+            }
+
+            return inline(this).SingleOrDefault();
+        }
 
         public override string ToString()
         {

@@ -126,6 +126,60 @@ namespace Forelle.Tests.Parsing.Construction
                 .ShouldEqual("S(a, E(e), a)");
         }
 
+        // tests parsing a non-ambiguous grammar with both generics and comparison
+        [Test]
+        public void TestNonAmbiguousGenericsWithComparison()
+        {
+            var name = new NonTerminal("Name");
+            var nameListOption = new NonTerminal("Opt<List<Name>>");
+            var nameList = new NonTerminal("List<Name>");
+            var genericParameters = new NonTerminal("Gen");
+            var optionalGenericParameters = new NonTerminal("Opt<Gen>");
+
+            var genericsRules = new Rules
+            {
+                { Exp, name },
+                { name, Id, optionalGenericParameters },
+                { optionalGenericParameters },
+                { optionalGenericParameters, genericParameters },
+                { genericParameters, LessThan, nameListOption, GreaterThan },
+                { nameListOption },
+                { nameListOption, nameList },
+                { nameList, name },
+                { nameList, name, Comma, nameList }
+            };
+
+            var (genericsParser, genericsErrors) = CreateParser(genericsRules);
+            Assert.IsEmpty(genericsErrors);
+
+            genericsParser.Parse(new[] { Id, LessThan, Id, Comma, Id, GreaterThan }, Exp);
+            genericsParser.Parsed.Inline(optionalGenericParameters, nameListOption)
+                .Flatten(nameList)
+                .ToString()
+                .ShouldEqual("Exp(Name(ID, Gen(<, List<Name>(Name(ID), ,, Name(ID)), >)))");
+
+            //var genericsAndComparisonRules = new Rules(genericsRules)
+            //{
+            //    { Cmp, LessThan },
+            //    { Cmp, GreaterThan },
+            //    { Exp, Id, Cmp, Exp },
+            //};
+
+            //var (genericsAndComparisonParser, genericsAndComparisonErrors) = CreateParser(genericsAndComparisonRules);
+            //Assert.IsEmpty(genericsAndComparisonErrors);
+
+            //this.output.WriteLine("*********** MORE AMBIGUOUS CASE ***********");
+            //var nodes2 = ParserBuilder.CreateParser(ambiguousRules);
+            //var parser2 = new ParserNodeParser(nodes2, Exp, this.output.WriteLine);
+            //var listener2 = new TreeListener();
+            //// id < id<id<id>>
+            //parser2.Parse(new[] { ID, LT, ID, LT, ID, LT, ID, GT, GT }, listener2);
+            //this.output.WriteLine(listener2.Root.Flatten().ToString());
+            //listener2.Root.Flatten()
+            //    .ToString()
+            //    .ShouldEqual("Exp(ID, Cmp(<), Exp(Name(ID, Opt<Gen>(Gen(<, Opt<List<Name>>(List<Name>(Name(ID, Opt<Gen>(Gen(<, Opt<List<Name>>(List<Name>(Name(ID, Opt<Gen>()))), >))))), >)))))");
+        }
+
         private static (TestingParser parser, List<string> errors) CreateParser(Rules rules)
         {
             if (!GrammarValidator.Validate(rules, out var validationErrors))
