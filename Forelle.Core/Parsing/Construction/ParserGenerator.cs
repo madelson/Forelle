@@ -118,10 +118,12 @@ namespace Forelle.Parsing.Construction
                 .GroupBy(t => t.token, t => t.rule)
                 .ToDictionary(g => g.Key, g => g.ToArray());
 
-            // if there is only one entry in the table, just create a non-LL(1) node for that entry
-            // we know that this will be non-LL(1) because we already checked for the single-rule case above
+            // if there is only one entry in the table, just create a non-LL(1) node for that entry.
+            // We know that this will be non-LL(1) because we already checked for the single-rule case above
             if (tokenLookaheadTable.Count == 1)
             {
+                // typically, we should never return a reference node as a direct result. However, in this case it's ok because
+                // The reference is for a narrower context than the current context
                 return this.ReferenceNodeFor(new NodeContext(tokenLookaheadTable.Single().Value, tokenLookaheadTable.Single().Key));
             }
 

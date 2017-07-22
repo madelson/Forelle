@@ -94,6 +94,38 @@ namespace Forelle.Tests.Parsing.Construction
             parser.Parsed.ToString().ShouldEqual("Stmt(Exp([, List<Exp>(Exp([, Stmt(Exp(ID), ;), List<Stmt>, ]), List<Exp>(Exp([, List<Exp>(Exp([, List<Exp>, ]), List<Exp>(Exp(ID), List<Exp>)), ]), List<Exp>)), ]), ;)");
         }
 
+        // test case from https://stackoverflow.com/questions/8496065/why-is-this-lr1-grammar-not-lalr1
+        [Test]
+        public void TestNonLalr1()
+        {
+            // S->aEa | bEb | aFb | bFa
+            // E->e
+            // F->e
+
+            var s = new NonTerminal("S");
+            var a = new Token("a");
+            var b = new Token("b");
+            var e = new Token("e");
+
+            var rules = new Rules
+            {
+                { s, a, E, a },
+                { s, b, E, b },
+                { s, a, F, b },
+                { s, b, F, a },
+                { E, e },
+                { F, e },
+            };
+
+            var (parser, errors) = CreateParser(rules);
+            Assert.IsEmpty(errors);
+            
+            parser.Parse(new[] { a, e, a }, s);
+            
+            parser.Parsed.ToString()
+                .ShouldEqual("S(a, E(e), a)");
+        }
+
         private static (TestingParser parser, List<string> errors) CreateParser(Rules rules)
         {
             if (!GrammarValidator.Validate(rules, out var validationErrors))
