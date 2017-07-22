@@ -62,7 +62,7 @@ namespace Forelle.Parsing
             var childNodes = Volatile.Read(ref this._childNodes);
             if (childNodes != null)
             {
-                value = childNodes[0];
+                value = DeepGetValue(childNodes[0]);
                 return true;
             }
 
@@ -73,15 +73,20 @@ namespace Forelle.Parsing
         public void SetValue(ParserNode node)
         {
             if (node == null) { throw new ArgumentNullException(nameof(node)); }
-            if (node is ReferenceNode) { throw new ArgumentException("a reference may not point to a reference", nameof(node)); }
-            
+
+            var nodeValue = DeepGetValue(node);
+            if (nodeValue == this) { throw new ArgumentException("must not create a circular reference chain", nameof(node)); }
+
             // note: as part of the circularity check, we throw away nodes earlier in the chain for efficiency
-            if (Interlocked.CompareExchange(ref this._childNodes, new[] { node }, comparand: null) != null)
+            if (Interlocked.CompareExchange(ref this._childNodes, new[] { nodeValue }, comparand: null) != null)
             {
                 throw new InvalidOperationException("value was already set");
             }
         }
-        
+
+        private static ParserNode DeepGetValue(ParserNode node) 
+            => node is ReferenceNode reference && reference.TryGetValue(out var value) ? DeepGetValue(value) : node;
+
         public override string ToString() => $"Reference({(this.TryGetValue(out var value) ? value.ToString() : "?")})";
     }
 
