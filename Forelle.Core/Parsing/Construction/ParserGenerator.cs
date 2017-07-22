@@ -299,9 +299,8 @@ namespace Forelle.Parsing.Construction
                 token: lookaheadToken,
                 discriminatorParse: this.ReferenceNodeFor(discriminator),
                 mapping: rulesAndFollowSets.Keys
-                    // TODO unclear if it's ok that we lose the start position of the input rules here
-                    .Select(r => (fromRule: r, toRule: suffixToRuleMapping[r.Symbols].Rule))
-                    .ToDictionary(t => t.fromRule, t => (t.toRule, this.ReferenceNodeFor(new RuleRemainder(t.toRule, start: 0))))
+                    .Select(r => (fromRule: r, toRule: suffixToRuleMapping[r.Symbols]))
+                    .ToDictionary(t => t.fromRule, t => (t.toRule.Rule, this.ReferenceNodeFor(t.toRule)))
             );
         }
 
