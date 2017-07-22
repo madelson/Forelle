@@ -91,7 +91,12 @@ namespace Forelle.Tests.Parsing.Construction
 
                         this._lookaheadIndex = -1;
 
-                        return this.Parse(grammarLookaheadNode.NodeMapping[ruleUsed]);
+                        var result = this.Parse(grammarLookaheadNode.NodeMapping[ruleUsed]);
+                        if (result != grammarLookaheadNode.RuleMapping[ruleUsed])
+                        {
+                            throw new InvalidOperationException($"sanity check: expected {grammarLookaheadNode.RuleMapping[ruleUsed]}, but was {result}");
+                        }
+                        return result;
                     }
                 case MapResultNode mapResultNode:
                     if (!this.IsInLookahead) { throw new InvalidOperationException($"Encountered {mapResultNode} outside of lookahead"); }
