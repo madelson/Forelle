@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Text;
 using System.Linq;
 
-namespace Forelle.Parsing
+namespace Forelle.Parsing.Preprocessing
 {
     internal static class StartSymbolAdder
     {
