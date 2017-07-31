@@ -176,6 +176,55 @@ namespace Forelle.Tests.Parsing.Construction
                 .ShouldEqual("Exp(ID, Cmp(<), Exp(Name(ID, Gen(<, List<Name>(Name(ID, Gen(<, List<Name>(Name(ID)), >))), >))))");
         }
 
+        // based on https://www.gnu.org/software/bison/manual/html_node/Mysterious-Conflicts.html#Mysterious-Conflicts
+        [Test]
+        public void TestBisonMysteriousConflict()
+        {
+            //  def: param_spec return_spec ',';
+            //  param_spec:
+            //  type
+            //| name_list ':' type
+            //;
+            //  return_spec:
+            //  type
+            //| name ':' type
+            //;
+            //  type: "id";
+
+            //  name: "id";
+            //  name_list:
+            //  name
+            //| name ',' name_list
+            //;
+
+            NonTerminal def = new NonTerminal("def"),
+                paramSpec = new NonTerminal("param_spec"),
+                returnSpec = new NonTerminal("return_spec"),
+                type = new NonTerminal("type"),
+                nameList = new NonTerminal("name_list"),
+                name = new NonTerminal("name");
+
+            var rules = new Rules
+            {
+                { def, paramSpec, returnSpec, Comma },
+                { paramSpec, type },
+                { paramSpec, nameList, Colon, type },
+                { returnSpec, type },
+                { returnSpec, name, Colon, type },
+                { type, Id },
+                { name, Id },
+                { nameList, name },
+                { nameList, name, Comma, nameList },
+            };
+
+            var (parser, errors) = CreateParser(rules);
+
+            parser.Parse(new[] { Id, Comma, Id, Colon, Id, Id, Colon, Id, Comma }, def);
+            parser.Parsed.Flatten(nameList)
+                .ToString()
+                .ShouldEqual("def(param_spec(name_list(name(ID), ,, name(ID)), :, type(ID)), return_spec(name(ID), :, type(ID)), ,)");
+        }
+
         private static (TestingParser parser, List<string> errors) CreateParser(Rules rules)
         {
             if (!GrammarValidator.Validate(rules, out var validationErrors))

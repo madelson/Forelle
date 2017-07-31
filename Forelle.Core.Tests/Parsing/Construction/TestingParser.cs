@@ -149,7 +149,10 @@ namespace Forelle.Tests.Parsing.Construction
         private void Eat(Token expectedToken)
         {
             var nextToken = this.Peek();
-            if (nextToken != expectedToken) { throw new InvalidOperationException($"Expected {expectedToken} but found {nextToken}"); }
+            if (nextToken != expectedToken)
+            {
+                throw new InvalidOperationException($"Expected {expectedToken} but found {nextToken} at index {(this.IsInLookahead ? this._lookaheadIndex : this._index)}");
+            }
 
             if (this.IsInLookahead)
             {
