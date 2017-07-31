@@ -12,6 +12,13 @@ namespace Forelle.Parsing.Construction
         private readonly IReadOnlyDictionary<NonTerminal, IReadOnlyList<Rule>> _rules;
         private readonly IFirstFollowProvider _firstFollowProvider;
 
+        /// <summary>
+        /// The set of <see cref="NonTerminal"/>s in <see cref="_rules"/> last time <see cref="_discriminatorPrefixSearchTrie"/>
+        /// was calculated. Used to determine when to recalculate
+        /// </summary>
+        private readonly HashSet<NonTerminal> _trieCacheSet = new HashSet<NonTerminal>();
+        private ImmutableTrie<Symbol, Rule> _discriminatorPrefixSearchTrie = ImmutableTrie<Symbol, Rule>.Empty;
+
         public DiscriminatorHelper(
             IReadOnlyDictionary<NonTerminal, IReadOnlyList<Rule>> rules,
             IFirstFollowProvider firstFollowProvider)
@@ -20,15 +27,140 @@ namespace Forelle.Parsing.Construction
             this._firstFollowProvider = firstFollowProvider;
         }
 
-        public object TryFindDiscriminator(IReadOnlyList<RuleRemainder> rules, Token lookaheadToken)
+        // TODO feels like search should be split out to a separate class
+
+        public NonTerminal FindExactMatchDiscriminatorOrDefault(IReadOnlyList<RuleRemainder> rules, Token lookaheadToken)
         {
-            var discriminatorSymbols = this._rules.Keys.Select(s => (symbol: s, info: s.SyntheticInfo as DiscriminatorSymbolInfo))
-                .Where(t => t.info != null)
-                .ToDictionary(t => t.symbol, t => t.info);
+            return this.FindDiscriminators(rules, lookaheadToken, isPrefixSearch: false)
+                .FirstOrDefault(r => r.IsFollowCompatible)
+                ?.Discriminator;
+        }
 
+        public List<DiscriminatorPrefixSearchResult> FindPrefixDiscriminators(IReadOnlyList<RuleRemainder> rules, Token lookaheadToken)
+        {
+            return this.FindDiscriminators(rules, lookaheadToken, isPrefixSearch: true)
+                .ToList();
+        }
 
+        private IEnumerable<DiscriminatorPrefixSearchResult> FindDiscriminators(
+            IReadOnlyCollection<RuleRemainder> rules, 
+            Token lookaheadToken, 
+            bool isPrefixSearch)
+        {
+            var produced = rules.Only(r => r.Produced);
 
-            throw new NotImplementedException();
+            // first, match each rule to all discriminator rules which have the same symbols or a prefix set
+            // of symbols
+            var searchTrie = this.GetSearchTrie();
+            var rulesToSearchResults = rules.ToDictionary(r => r, r => isPrefixSearch ? searchTrie.GetWithPrefixValues(r.Symbols) : searchTrie[r.Symbols]);
+
+            // next, potential matches are discriminators where every rule mapped to a rule for that discriminator
+            var potentialMatches = rulesToSearchResults.Values
+                .Select(results => results.Select(r => r.Produced))
+                .Aggregate((a, b) => a.Intersect(b))
+                // a symbol cannot be a match for itself
+                .Where(s => s != produced);
+            
+            return potentialMatches.Select(s => this.GetSearchResultOrDefault(s, rulesToSearchResults, lookaheadToken))
+                .Where(r => r != null);
+        }
+
+        // TODO move this to be a doc comment on a class
+        /// <summary>
+        /// Attempts to find a mapping between the rules for <paramref name="discriminator"/> and <paramref name="toMap"/>
+        /// that satisfies the following criteria:
+        /// 
+        /// * PREFIX: for all mappings, the symbols in the discriminator rule form a prefix of the symbols in the mapped rule (implied by <paramref name="ruleMatches"/>)
+        /// * LONGEST-PREFIX: for all mappings, there is no discriminator rule with more symbols that would also form a prefix of the mapped rule symbols
+        /// * LOOKAHEAD: for all mappings, the mapped discriminator rule has <paramref name="lookaheadToken"/> in its next set.
+        ///     This is important because we need to be able to parse the mapped discriminator starting with <paramref name="lookaheadToken"/>
+        /// * ALL-RULES: all rules being searched are mapped (implied by <paramref name="ruleMatches"/>)
+        /// * MANY-TO-MANY: it is NOT the case that all rules are mapped to the same discriminator rule. This could
+        ///     happen with any empty rule. We exclude it because it doesn't help us narrow things down at all
+        /// * ALL-DISCRIMINATOR-RULES: all rules for <paramref name="discriminator"/> are mapped UNLESS they cannot appear in the context of <paramref name="lookaheadToken"/>. 
+        ///     This restriction is somewhat questionable, since if we did find such a result it would simply mean that there will be a parsing error
+        /// </summary>
+        private DiscriminatorPrefixSearchResult GetSearchResultOrDefault(
+            NonTerminal discriminator, 
+            IReadOnlyDictionary<RuleRemainder, ImmutableHashSet<Rule>> ruleMatches,
+            Token lookaheadToken)
+        {
+            // LOOKAHEAD constraint
+            var validDiscriminatorRules = this._rules[discriminator].Where(r => this._firstFollowProvider.NextOf(r).Contains(lookaheadToken))
+                .ToList();
+
+            var mapping = new Dictionary<RuleRemainder, Rule>(capacity: ruleMatches.Count);
+            foreach (var kvp in ruleMatches) // ruleMatches implies PREFIX constraint
+            {
+                // LONGEST-PREFIX constraint
+                var bestMappedRule = kvp.Value.Where(validDiscriminatorRules.Contains)
+                    .MaxBy(r => r.Symbols.Count);
+                if (bestMappedRule == null) { return null; }
+                mapping.Add(kvp.Key, bestMappedRule);
+            }
+
+            // MANY-TO-MANY constraint
+            if (mapping.Values.Take(2).Distinct().Count() < 2) { return null; }
+            // ALL-DISCRIMINATOR-RULES constraint
+            if (validDiscriminatorRules.Except(mapping.Values).Any()) { return null; }
+
+            bool isFollowCompatible(RuleRemainder rule, Rule mapped)
+            {
+                // if the lookahead token is cannot apper in the mapped rule, then it must be in the
+                // follow (since we checked above that it's in the next). In that case, we know the mapped
+                // rule is nullable and will produce null. The suffix of rule will then be parsed starting
+                // with the lookahead token which should always work
+                if (!this._firstFollowProvider.FirstOf(mapped.Symbols).Contains(lookaheadToken))
+                {
+                    return true;
+                }
+
+                // otherwise, we're interested in whether the follow of the mapped rule encompasses the next
+                // of the suffix. If it does, then we know that the mapped rule parser will handle all cases
+                // we might encounter
+                return this._firstFollowProvider.FollowOf(mapped)
+                    .IsSupersetOf(this._firstFollowProvider.NextOf(new RuleRemainder(rule.Rule, start: rule.Start + mapped.Symbols.Count)));
+            }
+
+            return new DiscriminatorPrefixSearchResult(mapping, isFollowCompatible: mapping.All(kvp => isFollowCompatible(kvp.Key, kvp.Value)));
+        }
+
+        public sealed class DiscriminatorPrefixSearchResult
+        {
+            public DiscriminatorPrefixSearchResult(
+                IEnumerable<KeyValuePair<RuleRemainder, Rule>> rulesToDiscriminatorMapping,
+                bool isFollowCompatible)
+            {
+                this.RulesToDiscriminatorRuleMapping = rulesToDiscriminatorMapping.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+                this.Discriminator = this.RulesToDiscriminatorRuleMapping.Only(kvp => kvp.Value.Produced);
+                this.IsExactMatch = this.RulesToDiscriminatorRuleMapping.All(kvp => kvp.Key.Symbols.Count == kvp.Value.Symbols.Count);
+                this.IsFollowCompatible = isFollowCompatible;
+            }
+
+            public NonTerminal Discriminator { get; }
+            public IReadOnlyDictionary<RuleRemainder, Rule> RulesToDiscriminatorRuleMapping { get; }
+            public bool IsExactMatch { get; }
+            public bool IsFollowCompatible { get; }
+        }
+
+        private ImmutableTrie<Symbol, Rule> GetSearchTrie()
+        {
+            if (this._trieCacheSet.Count < this._rules.Count)
+            {
+                foreach (var kvp in this._rules)
+                {
+                    if (this._trieCacheSet.Add(kvp.Key)
+                        && kvp.Key.SyntheticInfo is DiscriminatorSymbolInfo)
+                    {
+                        foreach (var rule in kvp.Value)
+                        {
+                            this._discriminatorPrefixSearchTrie = this._discriminatorPrefixSearchTrie.Add(rule.Symbols, rule);
+                        }
+                    }
+                }
+            }
+
+            return this._discriminatorPrefixSearchTrie;
         }
 
         // TODO return list to enforce order?

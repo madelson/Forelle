@@ -38,12 +38,12 @@ namespace Forelle.Parsing
             return builder.ToImmutable().AddNull();
         }
 
-        public static IImmutableSet<Token> NextOf(this IFirstFollowProvider provider, Rule rule)
+        public static ImmutableHashSet<Token> NextOf(this IFirstFollowProvider provider, Rule rule)
         {
             return provider.NextOf(new RuleRemainder(rule, start: 0));
         }
 
-        public static IImmutableSet<Token> NextOf(this IFirstFollowProvider provider, RuleRemainder ruleRemainder)
+        public static ImmutableHashSet<Token> NextOf(this IFirstFollowProvider provider, RuleRemainder ruleRemainder)
         {
             var firsts = provider.FirstOf(ruleRemainder.Symbols);
             return firsts.ContainsNull()

@@ -171,6 +171,13 @@ namespace Forelle.Parsing.Construction
             return null;
         }
 
+        private static readonly IComparer<DiscriminatorHelper.DiscriminatorPrefixSearchResult> PrefixSearchResultComparer =
+            Comparers.Create((DiscriminatorHelper.DiscriminatorPrefixSearchResult r) => r.IsFollowCompatible)
+                .ThenBy(Comparers.Create((DiscriminatorHelper.DiscriminatorPrefixSearchResult r) => r.RulesToDiscriminatorRuleMapping.Values.Sum(v => v.Symbols.Count)))
+                // finally, break ties by preferring root discriminators. This is useful because it keeps the follow set from growing more than
+                // is needed, thus minimizing potential issues. However, this may lead to more total child discriminators being produced
+                .ThenBy(Comparers.Create((DiscriminatorHelper.DiscriminatorPrefixSearchResult r) => ((DiscriminatorSymbolInfo)r.Discriminator.SyntheticInfo).ParentDiscriminator != null));
+
         private ParserNode TryCreateDiscriminatorPrefixParserNode(Token lookaheadToken, IReadOnlyList<RuleRemainder> rules)
         {
             // if we are producing a discriminator, see if an existing discriminator is a prefix. This
@@ -178,42 +185,18 @@ namespace Forelle.Parsing.Construction
 
             var produced = rules.Only(r => r.Produced);
             if (!(produced.SyntheticInfo is DiscriminatorSymbolInfo)) { return null; }
+            
+            var matches = this._discriminatorHelper.FindPrefixDiscriminators(rules, lookaheadToken);
+            var bestMatch = matches.Where(r => !r.IsExactMatch || r.IsFollowCompatible)
+                .MaxBy(r => r, PrefixSearchResultComparer);
+            if (bestMatch == null) { return null; }
 
-            // TODO there is a lot more to do in this block (exact match handling, sub discriminators)
-            // TODO for better deduplication we should consider always leaving stub nodes rather than making recursive calls.
-            // those nodes get replaced in a final pass at the end
-
-            var match = this._rulesByProduced
-                // TODO used to just check for equality, but this would find T0 as a match for T0'. Now we check for
-                // that as well. This is redundant with the final check but might help for speed TODO && true
-                .Where(kvp => kvp.Key != produced && kvp.Key.SyntheticInfo is DiscriminatorSymbolInfo dsi && true)
-                //.Where(kvp => kvp.Key != produced && kvp.Value.All(i => i.Symbol != produced))
-                .Select(kvp => new { discriminator = kvp.Key, mapping = this.TryMapRulesToDiscriminatorPrefixRules(kvp.Key, rules, lookaheadToken) })
-                .Where(t => t.mapping != null)
-
-                // TODO can we handle exact match differently?
-                // don't consider a prefix mapping if it accounts for all symbols in the rules, since this can send us around
-                // in a loop when two discriminators have the same rules
-                //.Where(t => t.mapping.Any(kvp => kvp.Key.Symbols.Count > kvp.Value.Symbols.Count))
-                .FirstOrDefault();
-            if (match == null) { return null; }
-
-            // compute the effective follow of each mapped prefix rule based on the remaining suffix
-            var followMapping = match.mapping.GroupBy(kvp => kvp.Value, kvp => kvp.Key)
-                .ToDictionary(
-                    g => g.Key,
-                    g => g.Select(rr => new RuleRemainder(rr.Rule, start: rr.Start + g.Key.Symbols.Count))
-                        .Select(rr => this._firstFollow.NextOf(rr))
-                        .Aggregate((s1, s2) => s1.Union(s2))
-                );
-
-            // if the mapped discriminator rules fully encompass the follow sets of the mapped prefixes,
-            // then we can directly use that discriminator
-            if (followMapping.All(kvp => kvp.Value.Except(this._firstFollow.FollowOf(kvp.Key)).Count == 0))
+            if (bestMatch.IsFollowCompatible)
             {
                 return new MapResultNode(
-                    this.ReferenceNodeFor(match.discriminator),
-                    match.mapping.GroupBy(kvp => kvp.Value, kvp => new RuleRemainder(kvp.Key.Rule, start: kvp.Key.Start + kvp.Value.Symbols.Count))
+                    this.ReferenceNodeFor(bestMatch.Discriminator),
+                    bestMatch.RulesToDiscriminatorRuleMapping
+                        .GroupBy(kvp => kvp.Value, kvp => new RuleRemainder(kvp.Key.Rule, start: kvp.Key.Start + kvp.Value.Symbols.Count))
                         .ToDictionary(
                             g => g.Key,
                             g => this.ReferenceNodeFor(new NodeContext(g))
@@ -221,59 +204,40 @@ namespace Forelle.Parsing.Construction
                 );
             }
 
-            throw new NotImplementedException();
+            // otherwise, we need to create a new discriminator that is follow-compatible
+            var newDiscriminator = NonTerminal.CreateSynthetic(
+                bestMatch.Discriminator.Name.TrimStart(Symbol.SyntheticMarker)
+                    + new string('\'', count: this._rulesByProduced.Keys.Count(s => s.SyntheticInfo is DiscriminatorSymbolInfo dsi && dsi.ParentDiscriminator == bestMatch.Discriminator) + 1),
+                new DiscriminatorSymbolInfo(parentDiscriminator: bestMatch.Discriminator)
+            );
+            var newDiscriminatorRulesToRulesMapping = bestMatch.RulesToDiscriminatorRuleMapping
+                .GroupBy(kvp => kvp.Value, kvp => kvp.Key)
+                .Select(g => (
+                    newDiscriminatorRule: new Rule(newDiscriminator, g.Key.Symbols, g.Key.ExtendedInfo),
+                    remainderMappedRules: g.Select(r => new RuleRemainder(r.Rule, start: r.Start + g.Key.Symbols.Count))
+                        .ToArray()
+                ))
+                .ToArray();
+            var rulesToFollowSets = newDiscriminatorRulesToRulesMapping
+                .ToDictionary(
+                    t => t.newDiscriminatorRule,
+                    // todo could use the tighter follow calculation here that we use for IsFollowCompatible that accounts for the
+                    // lookahead token
+                    t => t.remainderMappedRules.Select(r => this._firstFollow.NextOf(r))
+                        .Aggregate((s1, s2) => s1.Union(s2))
+                );
+            this._rulesByProduced.Add(newDiscriminator, newDiscriminatorRulesToRulesMapping.Select(t => t.newDiscriminatorRule).ToArray());
+            this._firstFollow.Add(rulesToFollowSets);
+
+            return new MapResultNode(
+                this.ReferenceNodeFor(newDiscriminator),
+                newDiscriminatorRulesToRulesMapping.ToDictionary(
+                    t => t.newDiscriminatorRule,
+                    t => this.ReferenceNodeFor(new NodeContext(t.remainderMappedRules))
+                )
+            );
         }
-
-        /// <summary>
-        /// Attempts to find a mapping between the rules for <paramref name="discriminator"/> and <paramref name="toMap"/>
-        /// that satisfies the following criteria:
-        /// 
-        /// * PREFIX: for all mappings, the symbols in the discriminator rule form a prefix of the symbols in the mapped rule
-        /// * LONGEST-PREFIX: for all mappings, there is no discriminator rule with more symbols that would also form a prefix of the mapped rule symbols
-        /// * LOOKAHEAD: for all mappings, the mapped discriminator rule has <paramref name="lookaheadToken"/> in its next set.
-        ///     This is important because we need to be able to parse the mapped discriminator starting with <paramref name="lookaheadToken"/>
-        /// * ALL-RULES: all rules in <paramref name="toMap"/> are mapped
-        /// * MANY-TO-MANY: it is NOT the case that all rules in <paramref name="toMap"/> are mapped to the same discriminator symbol. This could
-        ///     happen with any empty rule. We exclude it because it doesn't help us narrow things down at all
-        /// * ALL-DISCRIMINATOR-RULES: all rules for <paramref name="discriminator"/> are mapped UNLESS they cannot appear in the context of <paramref name="lookaheadToken"/>. 
-        ///     This restriction is somewhat questionable, since if we did find such a result it would simply mean that there will be a parsing error
-        /// </summary>
-        private Dictionary<RuleRemainder, Rule> TryMapRulesToDiscriminatorPrefixRules(NonTerminal discriminator, IReadOnlyCollection<RuleRemainder> toMap, Token lookaheadToken)
-        {
-            // LOOKAHEAD constraint
-            var validDiscriminatorRules = this._rulesByProduced[discriminator].Where(r => this._firstFollow.NextOf(r).Contains(lookaheadToken))
-                .ToList();
-
-            var result = new Dictionary<RuleRemainder, Rule>();
-            foreach (var rule in validDiscriminatorRules)
-            {
-                // PREFIX constraint
-                foreach (var match in toMap.Where(r => r.Symbols.Take(rule.Symbols.Count).SequenceEqual(rule.Symbols)))
-                {
-                    if (!result.TryGetValue(match, out var existingMapping)
-                        // LONGEST-PREFIX constraint
-                        || existingMapping.Symbols.Count < rule.Symbols.Count)
-                    {
-                        result[match] = rule;
-                    }
-                }
-            }
-
-            // ALL-RULES constraint
-            if (result.Count != toMap.Count) { return null; }
-
-            // MANY-TO-MANY constraint
-            if (result.Values.Distinct().Take(2).Count() < 2) { return null; }
-
-            // ALL-DISCRIMINATOR-RULES constraint 
-            if (validDiscriminatorRules.Except(result.Values).Any())
-            {
-                return null;
-            }
-
-            return result;
-        }
-
+        
         private ParserNode TryCreateDiscriminatorLookaheadParserNode(Token lookaheadToken, IReadOnlyList<RuleRemainder> rules)
         {
             // build a mapping of what we would see after passing by lookaheadToken to the rule that that suffix would indicate
