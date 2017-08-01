@@ -27,7 +27,8 @@ namespace Forelle.Tests
             OpenBracket = new Token("["),
             CloseBracket = new Token("]"),
             OpenBrace = new Token("{"),
-            CloseBrace = new Token("}");
+            CloseBrace = new Token("}"),
+            Await = new Token("await");
 
         public static readonly NonTerminal Exp = new NonTerminal("Exp"),
             ExpList = new NonTerminal("List<Exp>"),

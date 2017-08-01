@@ -226,6 +226,81 @@ namespace Forelle.Tests.Parsing.Construction
                 .ShouldEqual("def(param_spec(name_list(name(ID), ,, name(ID)), :, type(ID)), return_spec(name(ID), :, type(ID)), ,)");
         }
 
+        [Test]
+        public void TestAdditionAndMultiplication()
+        {
+            var rules = new Rules
+            {
+                { Exp, Exp, Times, Exp },
+                { Exp, Exp, Plus, Exp },
+                { Exp, Id }
+            };
+
+            var (parser, errors) = CreateParser(rules);
+            Assert.IsEmpty(errors);
+
+            parser.Parse(new[] { Id, Times, Id, Times, Id, Plus, Id, Plus, Id, Times, Id }, Exp);
+            ToGroupedTokenString(parser.Parsed)
+                .ShouldEqual("((((ID * ID) * ID) + ID) + (ID * ID))");
+        }
+
+        [Test]
+        public void TestTernary()
+        {
+            var rules = new Rules
+            {
+                new Rule(Exp, new Symbol[] { Exp, QuestionMark, Exp, Colon, Exp }, ExtendedRuleInfo.RightAssociative),
+                { Exp, Id }
+            };
+
+            var (parser, errors) = CreateParser(rules);
+            Assert.IsEmpty(errors);
+
+            parser.Parse(new[] { Id, QuestionMark, Id, QuestionMark, Id, Colon, Id, Colon, Id, QuestionMark, Id, Colon, Id }, Exp);
+            ToGroupedTokenString(parser.Parsed)
+                .ShouldEqual("(ID ? (ID ? ID : ID) : (ID ? ID : ID))");
+        }
+
+        [Test]
+        public void TestUnary()
+        {
+            var rules = new Rules
+            {
+                { Exp, Minus, Exp },
+                { Exp, Exp, Minus, Exp },
+                { Exp, Await, Exp }, // making this lower-priority than e - e, although in C# it isn't
+                { Exp, Id }
+            };
+
+            var (parser, errors) = CreateParser(rules);
+            Assert.IsEmpty(errors);
+
+            parser.Parse(new[] { Await, Id, Minus, Minus, Id }, Exp);
+            ToGroupedTokenString(parser.Parsed)
+                .ShouldEqual("(await (ID - (- ID)))");
+        }
+
+        [Test]
+        public void TestAliases()
+        {
+            var rules = new Rules
+            {
+                { Exp, Id },
+                { Exp, Minus, Exp },
+                { Exp, BinOp },
+                
+                { BinOp, Exp, Times, Exp },
+                { BinOp, Exp, Minus, Exp },
+            };
+
+            var (parser, errors) = CreateParser(rules);
+            Assert.IsEmpty(errors);
+
+            parser.Parse(new[] { Id, Times, Minus, Id, Minus, Id }, Exp);
+            ToGroupedTokenString(parser.Parsed)
+                .ShouldEqual("((ID * (- ID)) - ID)");
+        }
+
         internal static (TestingParser parser, List<string> errors) CreateParser(Rules rules)
         {
             if (!GrammarValidator.Validate(rules, out var validationErrors))
@@ -239,6 +314,15 @@ namespace Forelle.Tests.Parsing.Construction
 
             var (nodes, errors) = ParserGenerator.CreateParser(withStartSymbols);
             return (parser: nodes != null ? new TestingParser(nodes) : null, errors);
+        }
+
+        private static string ToGroupedTokenString(SyntaxNode node)
+        {
+            if (node.Symbol is Token) { return node.Symbol.Name; }
+
+            var childrenStrings = node.Children.Select(ToGroupedTokenString).Where(s => s.Length > 0).ToArray();
+            var joinedChildrenStrings = string.Join(" ", childrenStrings);
+            return childrenStrings.Length > 1 ? $"({joinedChildrenStrings})" : joinedChildrenStrings;
         }
     }
 }
