@@ -218,6 +218,7 @@ namespace Forelle.Tests.Parsing.Construction
             };
 
             var (parser, errors) = CreateParser(rules);
+            Assert.IsEmpty(errors);
 
             parser.Parse(new[] { Id, Comma, Id, Colon, Id, Id, Colon, Id, Comma }, def);
             parser.Parsed.Flatten(nameList)
