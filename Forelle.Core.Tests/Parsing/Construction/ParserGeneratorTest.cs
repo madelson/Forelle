@@ -226,7 +226,7 @@ namespace Forelle.Tests.Parsing.Construction
                 .ShouldEqual("def(param_spec(name_list(name(ID), ,, name(ID)), :, type(ID)), return_spec(name(ID), :, type(ID)), ,)");
         }
 
-        private static (TestingParser parser, List<string> errors) CreateParser(Rules rules)
+        internal static (TestingParser parser, List<string> errors) CreateParser(Rules rules)
         {
             if (!GrammarValidator.Validate(rules, out var validationErrors))
             {

@@ -56,6 +56,7 @@
   <ItemGroup>
     <Compile Include="Parsing\Construction\DiscriminatorHelperTest.cs" />
     <Compile Include="Parsing\Construction\ImmutableTrieTest.cs" />
+    <Compile Include="Parsing\Construction\LargeGrammarTest.cs" />
     <Compile Include="Parsing\Preprocessing\AliasHelperTest.cs" />
     <Compile Include="Parsing\FirstFollowCalculatorTest.cs" />
     <Compile Include="Parsing\Preprocessing\GrammarValidatorTest.cs" />
