@@ -40,7 +40,7 @@ namespace Forelle.Parsing
 
         public static ImmutableHashSet<Token> NextOf(this IFirstFollowProvider provider, Rule rule)
         {
-            return provider.NextOf(new RuleRemainder(rule, start: 0));
+            return provider.NextOf(rule.Skip(0));
         }
 
         public static ImmutableHashSet<Token> NextOf(this IFirstFollowProvider provider, RuleRemainder ruleRemainder)

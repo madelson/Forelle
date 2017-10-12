@@ -59,7 +59,7 @@ namespace Forelle.Parsing.Construction
             // pre-populate the generator queue with contexts for each start symbol
             var startSymbolContexts = this._rulesByProduced.Select(kvp => (startInfo: kvp.Key.SyntheticInfo as StartSymbolInfo, rules: kvp.Value))
                 .Where(t => t.startInfo != null)
-                .ToDictionary(t => t.startInfo, t => new NodeContext(t.rules.Select(r => new RuleRemainder(r, start: 0))));
+                .ToDictionary(t => t.startInfo, t => new NodeContext(t.rules.Select(r => r.Skip(0))));
             foreach (var context in startSymbolContexts.Values)
             {
                 this._generatorQueue.Enqueue(context);
@@ -164,7 +164,7 @@ namespace Forelle.Parsing.Construction
                 var prefix = rules[0].Symbols.Take(prefixLength)
                     .Select(s => s is Token t ? new TokenOrParserNode(t) : new TokenOrParserNode(this.ReferenceNodeFor((NonTerminal)s)));
 
-                var suffixNode = this.ReferenceNodeFor(new NodeContext(rules.Select(r => new RuleRemainder(r.Rule, r.Start + prefixLength))));
+                var suffixNode = this.ReferenceNodeFor(new NodeContext(rules.Select(r => r.Skip(prefixLength))));
                 return new ParsePrefixSymbolsNode(prefix: prefix, suffixNode: suffixNode);
             }
 
@@ -196,7 +196,7 @@ namespace Forelle.Parsing.Construction
                 return new MapResultNode(
                     this.ReferenceNodeFor(bestMatch.Discriminator),
                     bestMatch.RulesToDiscriminatorRuleMapping
-                        .GroupBy(kvp => kvp.Value, kvp => new RuleRemainder(kvp.Key.Rule, start: kvp.Key.Start + kvp.Value.Symbols.Count))
+                        .GroupBy(kvp => kvp.Value, kvp => kvp.Key.Skip(kvp.Value.Symbols.Count))
                         .ToDictionary(
                             g => g.Key,
                             g => this.ReferenceNodeFor(new NodeContext(g))
@@ -214,7 +214,7 @@ namespace Forelle.Parsing.Construction
                 .GroupBy(kvp => kvp.Value, kvp => kvp.Key)
                 .Select(g => (
                     newDiscriminatorRule: new Rule(newDiscriminator, g.Key.Symbols, g.Key.ExtendedInfo),
-                    remainderMappedRules: g.Select(r => new RuleRemainder(r.Rule, start: r.Start + g.Key.Symbols.Count))
+                    remainderMappedRules: g.Select(r => r.Skip(g.Key.Symbols.Count))
                         .ToArray()
                 ))
                 .ToArray();
@@ -259,7 +259,7 @@ namespace Forelle.Parsing.Construction
 
             this._rulesByProduced.Add(discriminator, rulesAndFollowSets.Keys.ToArray());
             this._firstFollow.Add(rulesAndFollowSets);
-            this._generatorQueue.Enqueue(new NodeContext(rulesAndFollowSets.Keys.Select(r => new RuleRemainder(r, start: 0))));
+            this._generatorQueue.Enqueue(new NodeContext(rulesAndFollowSets.Keys.Select(r => r.Skip(0))));
 
             return new GrammarLookaheadNode(
                 token: lookaheadToken,
@@ -341,7 +341,7 @@ namespace Forelle.Parsing.Construction
 
         private ParserNode ReferenceNodeFor(NonTerminal nonTerminal)
         {
-            var nodeContext = new NodeContext(this._rulesByProduced[nonTerminal].Select(r => new RuleRemainder(r, start: 0)));
+            var nodeContext = new NodeContext(this._rulesByProduced[nonTerminal].Select(r => r.Skip(0)));
             return this.ReferenceNodeFor(nodeContext);
         }
 

@@ -119,7 +119,7 @@ namespace Forelle.Parsing.Construction
                 // of the suffix. If it does, then we know that the mapped rule parser will handle all cases
                 // we might encounter
                 return this._firstFollowProvider.FollowOf(mapped)
-                    .IsSupersetOf(this._firstFollowProvider.NextOf(new RuleRemainder(rule.Rule, start: rule.Start + mapped.Symbols.Count)));
+                    .IsSupersetOf(this._firstFollowProvider.NextOf(rule.Skip(mapped.Symbols.Count)));
             }
 
             return new DiscriminatorPrefixSearchResult(mapping, isFollowCompatible: mapping.All(kvp => isFollowCompatible(kvp.Key, kvp.Value)));
@@ -220,7 +220,7 @@ namespace Forelle.Parsing.Construction
                         {
                             // we don't bail immediately on failure here because failures can be turned into successes at the
                             // end of the similar loop below
-                            success &= this.TryGatherPostTokenSuffixes(prefixToken, new RuleRemainder(innerRule, start: 0), newSuffix, result);
+                            success &= this.TryGatherPostTokenSuffixes(prefixToken, innerRule.Skip(0), newSuffix, result);
                         }
                         return success;
                     }
@@ -260,7 +260,7 @@ namespace Forelle.Parsing.Construction
                 var success = true;
                 foreach (var innerRule in innerRules)
                 {
-                    success &= this.TryGatherPostTokenSuffixes(prefixToken, new RuleRemainder(innerRule, start: 0), newSuffix, result);
+                    success &= this.TryGatherPostTokenSuffixes(prefixToken, innerRule.Skip(0), newSuffix, result);
                 }
                 // the return value here is true if all recursive calls succeeded or if the current rule cannot 
                 // be followed by the prefix token. Note that we don't really expect this to come into play since the way

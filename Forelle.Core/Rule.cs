@@ -8,6 +8,8 @@ namespace Forelle
 {
     public sealed class Rule
     {
+        private RuleRemainder[] _cachedRuleRemainders;
+
         public Rule(NonTerminal produced, params Symbol[] symbols)
             : this(produced, symbols?.AsEnumerable())
         {
@@ -23,6 +25,21 @@ namespace Forelle
         public NonTerminal Produced { get; }
         public ReadOnlyCollection<Symbol> Symbols { get; }
         public ExtendedRuleInfo ExtendedInfo { get; }
+
+        internal RuleRemainder Skip(int symbolCount)
+        {
+            if (symbolCount < 0 || symbolCount > this.Symbols.Count)
+            {
+                throw new ArgumentOutOfRangeException(nameof(symbolCount), symbolCount, "must be non-negative and less than or equal to " + this.Symbols.Count);
+            }
+
+            if (this._cachedRuleRemainders == null)
+            {
+                this._cachedRuleRemainders = new RuleRemainder[this.Symbols.Count + 1];
+            }
+
+            return this._cachedRuleRemainders[symbolCount] ?? (this._cachedRuleRemainders[symbolCount] = new RuleRemainder(this, start: symbolCount));
+        }
 
         public override string ToString() => $"{this.Produced} -> {string.Join(" ", this.Symbols)}{this.GetExtendedRuleInfoString()}";
 
@@ -184,6 +201,9 @@ namespace Forelle
         Pop = 2,
     }
 
+    // todo refactor idea: remove public constructor on rule remainder and instead
+    // have an internal .Skip() method on Rule which returns a cached RR for that rule
+    // RR can also have .Skip() which calls the same thing
     internal sealed class RuleRemainder
     {
         private ReadOnlyCollection<Symbol> _cachedSymbols;
@@ -191,7 +211,7 @@ namespace Forelle
         public RuleRemainder(Rule rule, int start)
         {
             if (rule == null) { throw new ArgumentNullException(nameof(rule)); }
-            if (start < 0 || start > rule.Symbols.Count) { throw new ArgumentOutOfRangeException(nameof(start), start, $"must be a valid index in {rule}"); }
+            if (start < 0 || start > rule.Symbols.Count) { throw new ArgumentOutOfRangeException(nameof(start), start, $"must be a valid symbol index in {rule}"); }
 
             this.Rule = rule;
             this.Start = start;
@@ -213,6 +233,16 @@ namespace Forelle
                 }
                 return this._cachedSymbols;
             }
+        }
+        
+        public RuleRemainder Skip(int symbolCount)
+        {
+            if (symbolCount < 0 || symbolCount > this.Symbols.Count)
+            {
+                throw new ArgumentOutOfRangeException(nameof(symbolCount), symbolCount, "must be non-negative and less than or equal to " + this.Symbols.Count);
+            }
+
+            return this.Rule.Skip(this.Start + symbolCount);
         }
 
         // for rules and symbols, we use referential equality because each gets created exactly once. However, for remainders we

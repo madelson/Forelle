@@ -49,5 +49,23 @@ namespace Forelle.Tests
             Assert.DoesNotThrow(() => new RuleRemainder(rule, 0));
             Assert.DoesNotThrow(() => new RuleRemainder(rule, 1));
         }
+
+        [Test]
+        public void TestSkip()
+        {
+            var rule = new Rule(Exp, Id, Minus, Id);
+            for (var i = 0; i <= rule.Symbols.Count; ++i)
+            {
+                Assert.IsTrue(rule.Skip(i).Symbols.SequenceEqual(rule.Symbols.Skip(i)), $"symbols for remainder {i}");
+                Assert.AreSame(rule.Skip(i), rule.Skip(i), $"remainder {i} is cached");
+            }
+
+            Assert.AreSame(rule.Skip(2), rule.Skip(1).Skip(1));
+
+            Assert.Throws<ArgumentOutOfRangeException>(() => rule.Skip(-1));
+            Assert.Throws<ArgumentOutOfRangeException>(() => rule.Skip(rule.Symbols.Count + 1));
+            Assert.Throws<ArgumentOutOfRangeException>(() => rule.Skip(1).Skip(-1));
+            Assert.Throws<ArgumentOutOfRangeException>(() => rule.Skip(3).Skip(1));
+        }
     }
 }
