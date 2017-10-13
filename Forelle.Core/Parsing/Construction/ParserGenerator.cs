@@ -28,6 +28,7 @@ namespace Forelle.Parsing.Construction
         private readonly Dictionary<NonTerminal, IReadOnlyList<Rule>> _rulesByProduced;
         private readonly DiscriminatorFirstFollowProviderBuilder _firstFollow;
         private readonly DiscriminatorHelper _discriminatorHelper;
+        private readonly Lookup<NonTerminal, DiscriminatorContext> _discriminatorContexts = new Lookup<NonTerminal, DiscriminatorContext>();
 
         private readonly Queue<NodeContext> _generatorQueue = new Queue<NodeContext>();
         private readonly List<string> _errors = new List<string>();
@@ -91,10 +92,28 @@ namespace Forelle.Parsing.Construction
                 .Distinct()
                 .ToArray();
 
+            var ambiguityResolver = new Lazy<AmbiguityResolver>(
+                () => new AmbiguityResolver(this._rulesByProduced, this._discriminatorContexts, this._firstFollow),
+                isThreadSafe: false
+            );
+
             foreach (var reference in allReferences)
             {
                 var referenceContext = this._referenceNodeContexts[reference];
-                reference.SetValue(this._nodesByContext[referenceContext.NodeContext.Value]);
+                if (!referenceContext.IsAmbiguous)
+                {
+                    reference.SetValue(this._nodesByContext[referenceContext.NodeContext]);
+                }
+                else
+                {
+                    var (rule, error) = ambiguityResolver.Value.ResolveAmbiguity(referenceContext.NodeContext.Rules, referenceContext.NodeContext.Lookahead);
+                    if (error != null)
+                    {
+                        this._errors.Add(error);
+                    }
+
+                    reference.SetValue(this.ReferenceNodeFor(rule));
+                }
             }
         }
 
@@ -143,7 +162,7 @@ namespace Forelle.Parsing.Construction
             return this.TryCreatePrefixParserNode(lookaheadToken, rules)
                 ?? this.TryCreateDiscriminatorPrefixParserNode(lookaheadToken, rules)
                 ?? this.TryCreateDiscriminatorLookaheadParserNode(lookaheadToken, rules)
-                ?? throw new NotImplementedException();
+                ?? this.CreateAmbiguityResolutionNode(lookaheadToken, rules);
         }
 
         private ParserNode TryCreatePrefixParserNode(Token lookaheadToken, IReadOnlyList<RuleRemainder> rules)
@@ -193,6 +212,16 @@ namespace Forelle.Parsing.Construction
 
             if (bestMatch.IsFollowCompatible)
             {
+                this._discriminatorContexts.Add(
+                    bestMatch.Discriminator,
+                    new DiscriminatorContext(
+                        bestMatch.RulesToDiscriminatorRuleMapping
+                            .Select(kvp => (DiscriminatorRule: kvp.Value, MappedRule: kvp.Key.Skip(kvp.Value.Symbols.Count))), 
+                        lookaheadToken, 
+                        isPrefix: true
+                    )
+                );
+
                 return new MapResultNode(
                     this.ReferenceNodeFor(bestMatch.Discriminator),
                     bestMatch.RulesToDiscriminatorRuleMapping
@@ -229,6 +258,19 @@ namespace Forelle.Parsing.Construction
             this._rulesByProduced.Add(newDiscriminator, newDiscriminatorRulesToRulesMapping.Select(t => t.newDiscriminatorRule).ToArray());
             this._firstFollow.Add(rulesToFollowSets);
 
+            this._discriminatorContexts.Add(
+                newDiscriminator,
+                new DiscriminatorContext(
+                    newDiscriminatorRulesToRulesMapping
+                        .SelectMany(
+                            m => m.remainderMappedRules,
+                            (m, r) => (DiscriminatorRule: m.newDiscriminatorRule, MappedRule: r)
+                        ),
+                    lookaheadToken,
+                    isPrefix: true
+                )
+            );
+
             return new MapResultNode(
                 this.ReferenceNodeFor(newDiscriminator),
                 newDiscriminatorRulesToRulesMapping.ToDictionary(
@@ -260,6 +302,16 @@ namespace Forelle.Parsing.Construction
             this._rulesByProduced.Add(discriminator, rulesAndFollowSets.Keys.ToArray());
             this._firstFollow.Add(rulesAndFollowSets);
             this._generatorQueue.Enqueue(new NodeContext(rulesAndFollowSets.Keys.Select(r => r.Skip(0))));
+
+            this._discriminatorContexts.Add(
+                discriminator,
+                new DiscriminatorContext(
+                    rulesAndFollowSets.Keys
+                        .Select(r => (DiscriminatorRule: r, MappedRule: suffixToRuleMapping[r.Symbols])),
+                    lookaheadToken,
+                    isPrefix: false
+                )
+            );
 
             return new GrammarLookaheadNode(
                 token: lookaheadToken,
@@ -293,6 +345,17 @@ namespace Forelle.Parsing.Construction
                 }
             }
             return suffixToRuleMapping;
+        }
+
+        private ParserNode CreateAmbiguityResolutionNode(Token lookaheadToken, IReadOnlyList<RuleRemainder> rules)
+        {
+            // to keep things simple and because a discriminator can acquire new contexts throughout generation,
+            // we resolve all ambiguities at the end. Therefore when we get here we simply return a reference node
+            // which is tied to the ambiguous context
+
+            var reference = new ReferenceNode();
+            this._referenceNodeContexts.Add(reference, new ReferenceContext(new NodeContext(rules, lookaheadToken), isAmbiguous: true));
+            return reference;
         }
 
         /// <summary>
@@ -335,7 +398,7 @@ namespace Forelle.Parsing.Construction
 
             // return a reference to the future computation
             var reference = new ReferenceNode();
-            this._referenceNodeContexts.Add(reference, new ReferenceContext(nodeContext));
+            this._referenceNodeContexts.Add(reference, new ReferenceContext(nodeContext, isAmbiguous: false));
             return reference;
         }
 
@@ -355,12 +418,14 @@ namespace Forelle.Parsing.Construction
 
         private sealed class ReferenceContext
         {
-            public ReferenceContext(NodeContext nodeContext)
+            public ReferenceContext(NodeContext nodeContext, bool isAmbiguous)
             {
                 this.NodeContext = nodeContext;
+                this.IsAmbiguous = isAmbiguous;
             }
 
-            public NodeContext? NodeContext { get; }
+            public NodeContext NodeContext { get; }
+            public bool IsAmbiguous { get; }
         }
 
         private string DebugGrammar => string.Join(

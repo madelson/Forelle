@@ -103,7 +103,7 @@ namespace Forelle
         
         /// <summary>
         /// If non-null, this collection indicates that a parse of this <see cref="Rule"/> should instead be interpreted as a parse of
-        /// 0 or more other <see cref="Rule"/>. This capability is used to "hide" certain rules (e. g. aliases) or to transform the grammar
+        /// 0 or more other <see cref="Rule"/>s. This capability is used to "hide" certain rules (e. g. aliases) or to transform the grammar
         /// while still parsing the original user-specified rules (e. g. left-recursion elimination).
         /// 
         /// A null value of this property indicates that no mapping should be performed.

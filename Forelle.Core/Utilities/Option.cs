@@ -4,6 +4,10 @@ using System.Text;
 
 namespace Forelle
 {
+    /// <summary>
+    /// A <see cref="Nullable{T}"/>-like structure that can be used
+    /// with both reference and value types
+    /// </summary>
     internal struct Option<T>
     {
         private T _value;

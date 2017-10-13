@@ -54,6 +54,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Parsing\Construction\AmbiguousGrammarParserGeneratorTest.cs" />
     <Compile Include="Parsing\Construction\DiscriminatorHelperTest.cs" />
     <Compile Include="Parsing\Construction\ImmutableTrieTest.cs" />
     <Compile Include="Parsing\Construction\LargeGrammarTest.cs" />

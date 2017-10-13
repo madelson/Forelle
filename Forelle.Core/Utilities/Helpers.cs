@@ -32,6 +32,7 @@ namespace Forelle
             }
         }
 
+        // todo remove if not needed
         public static IEqualityComparer<(T1, T2)> CreateTupleComparer<T1, T2>(
             IEqualityComparer<T1> comparer1 = null,
             IEqualityComparer<T2> comparer2 = null)
