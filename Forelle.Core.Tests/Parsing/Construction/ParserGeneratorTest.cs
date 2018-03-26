@@ -301,7 +301,76 @@ namespace Forelle.Tests.Parsing.Construction
                 .ShouldEqual("((ID * (- ID)) - ID)");
         }
 
-        internal static (TestingParser parser, List<string> errors) CreateParser(Rules rules)
+        /// <summary>
+        /// The grammar is not LR(1) because after shifting ID and seeing semicolon in the
+        /// lookahead we can't tell whether to reduce by A -> ID or B -> ID.
+        /// 
+        /// Confirmed using http://jsmachines.sourceforge.net/machines/lr1.html
+        /// </summary>
+        [Test]
+        public void TestLR2()
+        {
+            var rules = new Rules
+            {
+                { Stmt, Exp },
+                { Exp, A, SemiColon, Plus },
+                { Exp, B, SemiColon, Minus },
+                { A, Id },
+                { B, Id },
+            };
+
+            var (parser, errors) = CreateParser(rules);
+            Assert.IsEmpty(errors);
+
+            parser.Parse(new[] { Id, SemiColon, Plus }, Stmt);
+            parser.Parsed.ToString()
+                .ShouldEqual("Stmt(Exp(A(ID), ;, +))");
+
+            parser.Parse(new[] { Id, SemiColon, Minus }, Stmt);
+            parser.Parsed.ToString()
+                .ShouldEqual("Stmt(Exp(B(ID), ;, -))");
+        }
+
+        /// <summary>
+        /// This test is a minor build on <see cref="TestLR2"/> in two ways:
+        /// 
+        /// 1. Instead of hiding the discriminating token behind a single token (which allows 2-token lookahead),
+        /// we hide it behind and arbitrary-length non-terminal. This thus means that no fixed lookahead is sufficient
+        /// to decide between producing A or B in LR
+        /// 
+        /// 2. To further complicate things, we change A and B to parse the same set of tokens but with different
+        /// internal structure
+        /// </summary>
+        [Test]
+        public void TestLRNone()
+        {
+            var rules = new Rules
+            {
+                { Stmt, Exp },
+                { Exp, A, C, Plus },
+                { Exp, B, C, Minus },
+                { A, P, Id },
+                { B, Id, P },
+                { P, Id, Id },
+                { C },
+                { C, LeftParen, C, RightParen }
+            };
+
+            var (parser, errors) = CreateParser(rules);
+            Assert.IsEmpty(errors);
+
+            parser.Parse(new[] { Id, Id, Id, LeftParen, LeftParen, RightParen, RightParen, Plus }, Stmt);
+            parser.Parsed.ToString()
+                .ShouldEqual("Stmt(Exp(A(P(ID, ID), ID), C((, C((, C, )), )), +))");
+
+            parser.Parse(new[] { Id, Id, Id, LeftParen, LeftParen, RightParen, RightParen, Minus }, Stmt);
+            parser.Parsed.ToString()
+                .ShouldEqual("Stmt(Exp(B(ID, P(ID, ID)), C((, C((, C, )), )), -))");
+        }
+
+        internal static (TestingParser parser, List<string> errors) CreateParser(
+            Rules rules,
+            params AmbiguityResolution[] ambiguityResolutions)
         {
             if (!GrammarValidator.Validate(rules, out var validationErrors))
             {
@@ -312,11 +381,11 @@ namespace Forelle.Tests.Parsing.Construction
             var withoutLeftRecursion = LeftRecursionRewriter.Rewrite(withoutAliases);
             var withStartSymbols = StartSymbolAdder.AddStartSymbols(withoutLeftRecursion);
 
-            var (nodes, errors) = ParserGenerator.CreateParser(withStartSymbols);
+            var (nodes, errors) = ParserGenerator.CreateParser(withStartSymbols, ambiguityResolutions);
             return (parser: nodes != null ? new TestingParser(nodes) : null, errors);
         }
 
-        private static string ToGroupedTokenString(SyntaxNode node)
+        internal static string ToGroupedTokenString(SyntaxNode node)
         {
             if (node.Symbol is Token) { return node.Symbol.Name; }
 
