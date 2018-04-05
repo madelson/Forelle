@@ -26,6 +26,7 @@ namespace Forelle.Parsing.Construction
     internal class ParserGenerator
     {
         private readonly Dictionary<NonTerminal, IReadOnlyList<Rule>> _rulesByProduced;
+        private readonly IReadOnlyList<AmbiguityResolution> _ambiguityResolutions;
         private readonly DiscriminatorFirstFollowProviderBuilder _firstFollow;
         private readonly DiscriminatorHelper _discriminatorHelper;
         private readonly Lookup<NonTerminal, DiscriminatorContext> _discriminatorContexts = new Lookup<NonTerminal, DiscriminatorContext>();
@@ -36,10 +37,11 @@ namespace Forelle.Parsing.Construction
         private readonly Dictionary<NodeContext, ParserNode> _nodesByContext = new Dictionary<NodeContext, ParserNode>();
         private readonly Dictionary<ReferenceNode, ReferenceContext> _referenceNodeContexts = new Dictionary<ReferenceNode, ReferenceContext>();
 
-        private ParserGenerator(IReadOnlyList<Rule> rules)
+        private ParserGenerator(IReadOnlyList<Rule> rules, IEnumerable<AmbiguityResolution> ambiguityResolutions)
         {
             this._rulesByProduced = rules.GroupBy(r => r.Produced)
                 .ToDictionary(g => g.Key, g => (IReadOnlyList<Rule>)g.ToList());
+            this._ambiguityResolutions = ambiguityResolutions.ToArray();
 
             var baseFirstFollow = FirstFollowCalculator.Create(rules);
             this._firstFollow = new DiscriminatorFirstFollowProviderBuilder(baseFirstFollow);
@@ -47,9 +49,11 @@ namespace Forelle.Parsing.Construction
             this._discriminatorHelper = new DiscriminatorHelper(this._rulesByProduced, this._firstFollow);
         }
 
-        public static (Dictionary<StartSymbolInfo, ParserNode> nodes, List<string> errors) CreateParser(IReadOnlyList<Rule> rules)
+        public static (Dictionary<StartSymbolInfo, ParserNode> nodes, List<string> errors) CreateParser(
+            IReadOnlyList<Rule> rules,
+            IEnumerable<AmbiguityResolution> ambiguityResolutions)
         {
-            var generator = new ParserGenerator(rules);
+            var generator = new ParserGenerator(rules, ambiguityResolutions);
             var nodes = generator.Generate();
 
             return (nodes: nodes, errors: generator._errors);
@@ -93,7 +97,7 @@ namespace Forelle.Parsing.Construction
                 .ToArray();
 
             var ambiguityResolver = new Lazy<AmbiguityResolver>(
-                () => new AmbiguityResolver(this._rulesByProduced, this._discriminatorContexts, this._firstFollow),
+                () => new AmbiguityResolver(this._rulesByProduced, this._ambiguityResolutions, this._discriminatorContexts, this._firstFollow),
                 isThreadSafe: false
             );
 
@@ -214,11 +218,10 @@ namespace Forelle.Parsing.Construction
             {
                 this._discriminatorContexts.Add(
                     bestMatch.Discriminator,
-                    new DiscriminatorContext(
+                    new PrefixDiscriminatorContext(
                         bestMatch.RulesToDiscriminatorRuleMapping
-                            .Select(kvp => (DiscriminatorRule: kvp.Value, MappedRule: kvp.Key.Skip(kvp.Value.Symbols.Count))), 
-                        lookaheadToken, 
-                        isPrefix: true
+                            .Select(kvp => new PrefixDiscriminatorContext.RuleMapping(discriminatorRule: kvp.Value, mappedRule: kvp.Key.Skip(kvp.Value.Symbols.Count))), 
+                        lookaheadToken
                     )
                 );
 
@@ -260,14 +263,13 @@ namespace Forelle.Parsing.Construction
 
             this._discriminatorContexts.Add(
                 newDiscriminator,
-                new DiscriminatorContext(
+                new PrefixDiscriminatorContext(
                     newDiscriminatorRulesToRulesMapping
                         .SelectMany(
                             m => m.remainderMappedRules,
-                            (m, r) => (DiscriminatorRule: m.newDiscriminatorRule, MappedRule: r)
+                            (m, r) => new PrefixDiscriminatorContext.RuleMapping(discriminatorRule: m.newDiscriminatorRule, mappedRule: r)
                         ),
-                    lookaheadToken,
-                    isPrefix: true
+                    lookaheadToken
                 )
             );
 
@@ -292,11 +294,11 @@ namespace Forelle.Parsing.Construction
 
             var discriminator = NonTerminal.CreateSynthetic(
                 "T" + this._rulesByProduced.Keys.Count(k => k.SyntheticInfo is DiscriminatorSymbolInfo),
-                new DiscriminatorSymbolInfo() // TODO what info goes here? suffixToRuleMapping?
+                new DiscriminatorSymbolInfo()
             );
             var rulesAndFollowSets = suffixToRuleMapping.ToDictionary(
-                kvp => new Rule(discriminator, kvp.Key, kvp.Value.Rule.ExtendedInfo), 
-                kvp => this._firstFollow.FollowOf(kvp.Value.Rule)
+                kvp => new Rule(discriminator, kvp.Key, kvp.Value.rule.Rule.ExtendedInfo), 
+                kvp => this._firstFollow.FollowOf(kvp.Value.rule.Rule)
             );
 
             this._rulesByProduced.Add(discriminator, rulesAndFollowSets.Keys.ToArray());
@@ -305,11 +307,13 @@ namespace Forelle.Parsing.Construction
 
             this._discriminatorContexts.Add(
                 discriminator,
-                new DiscriminatorContext(
-                    rulesAndFollowSets.Keys
-                        .Select(r => (DiscriminatorRule: r, MappedRule: suffixToRuleMapping[r.Symbols])),
-                    lookaheadToken,
-                    isPrefix: false
+                new PostTokenSuffixDiscriminatorContext(
+                    rulesAndFollowSets.Keys.Select(r => new PostTokenSuffixDiscriminatorContext.RuleMapping(
+                        discriminatorRule: r, 
+                        mappedRule: suffixToRuleMapping[r.Symbols].rule,
+                        expansionPaths: suffixToRuleMapping[r.Symbols].expansions
+                    )),
+                    lookaheadToken
                 )
             );
 
@@ -317,14 +321,16 @@ namespace Forelle.Parsing.Construction
                 token: lookaheadToken,
                 discriminatorParse: this.ReferenceNodeFor(discriminator),
                 mapping: rulesAndFollowSets.Keys
-                    .Select(r => (fromRule: r, toRule: suffixToRuleMapping[r.Symbols]))
+                    .Select(r => (fromRule: r, toRule: suffixToRuleMapping[r.Symbols].rule))
                     .ToDictionary(t => t.fromRule, t => (t.toRule.Rule, this.ReferenceNodeFor(t.toRule)))
             );
         }
 
-        private IReadOnlyDictionary<IReadOnlyList<Symbol>, RuleRemainder> TryBuildSuffixToRuleMapping(Token lookaheadToken, IReadOnlyList<RuleRemainder> rules)
+        private IReadOnlyDictionary<IReadOnlyList<Symbol>, (RuleRemainder rule, IReadOnlyList<IReadOnlyList<RuleRemainder>> expansions)> TryBuildSuffixToRuleMapping(
+            Token lookaheadToken, 
+            IReadOnlyList<RuleRemainder> rules)
         {
-            var suffixToRuleMapping = new Dictionary<IReadOnlyList<Symbol>, RuleRemainder>(EqualityComparers.GetSequenceComparer<Symbol>());
+            var suffixToRuleMapping = new Dictionary<IReadOnlyList<Symbol>, (RuleRemainder rule, IReadOnlyList<IReadOnlyList<RuleRemainder>> expansions)>(EqualityComparers.GetSequenceComparer<Symbol>());
             foreach (var rule in rules)
             {
                 var suffixes = this._discriminatorHelper.TryGatherPostTokenSuffixes(lookaheadToken, rule);
@@ -335,13 +341,13 @@ namespace Forelle.Parsing.Construction
 
                 foreach (var suffix in suffixes)
                 {
-                    if (suffixToRuleMapping.ContainsKey(suffix))
+                    if (suffixToRuleMapping.ContainsKey(suffix.Key))
                     {
                         // in theory we could handle this case if the two rules with the same suffix
                         // have disjoint follow sets. However, this seems like it would come up rarely
                         return null;
                     }
-                    suffixToRuleMapping.Add(suffix, rule);
+                    suffixToRuleMapping.Add(suffix.Key, (rule, expansions: suffix.ToArray()));
                 }
             }
             return suffixToRuleMapping;

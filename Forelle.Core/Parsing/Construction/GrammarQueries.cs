@@ -1,5 +1,4 @@
-﻿using Medallion.Collections;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
@@ -7,11 +6,9 @@ using System.Text;
 
 namespace Forelle.Parsing.Construction
 {
-    internal class AmbiguityResolver
+    internal class GrammarQueries
     {
         private readonly IReadOnlyDictionary<NonTerminal, IReadOnlyList<Rule>> _rulesByProduced;
-        private readonly IReadOnlyList<AmbiguityResolution> _ambiguityResolutions;
-        private readonly ILookup<NonTerminal, DiscriminatorContext> _discriminatorContexts;
         private readonly IFirstFollowProvider _firstFollowProvider;
 
         /// <summary>
@@ -20,19 +17,16 @@ namespace Forelle.Parsing.Construction
         /// </summary>
         private readonly Lazy<ILookup<Symbol, (Rule rule, int index)>> _nonDiscriminatorSymbolReferences;
 
-        public AmbiguityResolver(
+        public GrammarQueries(
             IReadOnlyDictionary<NonTerminal, IReadOnlyList<Rule>> rulesByProduced,
-            IReadOnlyList<AmbiguityResolution> ambiguityResolutions,
-            ILookup<NonTerminal, DiscriminatorContext> discriminatorContexts,
             IFirstFollowProvider firstFollowProvider)
         {
+            // no defensive copies here: we are ok with the state changing
             this._rulesByProduced = rulesByProduced;
-            this._ambiguityResolutions = ambiguityResolutions;
-            this._discriminatorContexts = discriminatorContexts;
             this._firstFollowProvider = firstFollowProvider;
 
             // since the only rules that get added along the way are for discriminators, we can safely
-            // build this cache only once (also this is OK since we only resolve ambiguities at the end)
+            // build this cache only once
             this._nonDiscriminatorSymbolReferences = new Lazy<ILookup<Symbol, (Rule rule, int index)>>(
                 () => this._rulesByProduced.Where(kvp => !(kvp.Key.SyntheticInfo is DiscriminatorSymbolInfo))
                     .SelectMany(kvp => kvp.Value)
@@ -41,40 +35,8 @@ namespace Forelle.Parsing.Construction
             );
         }
 
-        public (RuleRemainder Rule, string Error) ResolveAmbiguity(IReadOnlyList<RuleRemainder> rules, Token lookaheadToken)
+        public IReadOnlyList<Symbol> GetConstruction(RuleRemainder rule, Token lookaheadToken)
         {
-            // first try to resolve using specified resolutions
-            var resolutionPreferredRules = this._ambiguityResolutions.Select(r => r.GetPreferredRuleOrDefault(rules, lookaheadToken))
-                .Where(r => r != null)
-                .ToArray();
-            if (resolutionPreferredRules.Length > 0)
-            {
-                return (resolutionPreferredRules[0], resolutionPreferredRules.Length > 1 ? "multiple ambiguity resolutions apply" : null);
-            }
-
-            var contextualizer = new AmbiguityContextualizer(this._rulesByProduced, this._firstFollowProvider, this._discriminatorContexts);
-            contextualizer.GetExpandedAmbiguityContexts(rules, lookaheadToken);
-
-            // construct a helpful error message
-            var longestConstruction = rules.Select(r => this.GetConstruction(r, lookaheadToken))
-                .MaxBy(c => c.Count);
-            var errorBuilder = new StringBuilder("Unable to choose between ");
-            for (var i = 0; i < rules.Count; ++i)
-            {
-                if (i > 0) { errorBuilder.Append(", "); }
-                errorBuilder.Append($"'{rules[i].Rule}' at index {rules[i].Start}");
-            }
-            errorBuilder.Append($" when encountering '{lookaheadToken}'. Full context: '{string.Join(" ", longestConstruction)}'");
-            return (rules[0], errorBuilder.ToString());
-        }
-
-        private IReadOnlyList<Symbol> GetConstruction(RuleRemainder rule, Token lookaheadToken)
-        {
-            if (rule.Produced.SyntheticInfo is DiscriminatorSymbolInfo)
-            {
-                throw new NotImplementedException();
-            }
-
             return this._firstFollowProvider.FirstOf(rule.Symbols).Contains(lookaheadToken)
                 ? (IReadOnlyList<Symbol>)rule.Rule.Symbols.Take(rule.Start)
                     .Concat(this.GetSuffixConstruction(rule.Symbols.ToImmutableList(), lookaheadToken))
@@ -83,8 +45,8 @@ namespace Forelle.Parsing.Construction
         }
 
         private ImmutableList<Symbol> GetOuterConstruction(
-            NonTerminal produced,
-            Token lookaheadToken,
+            NonTerminal produced, 
+            Token lookaheadToken, 
             ImmutableList<Symbol> innerSymbols,
             ImmutableHashSet<NonTerminal> visited)
         {
@@ -120,6 +82,37 @@ namespace Forelle.Parsing.Construction
             }
 
             return outerSymbols.ToImmutable();
+        }
+
+        // todo do we need?
+        private bool CanEnd(NonTerminal endingSymbol, IReadOnlyList<Symbol> symbols)
+        {
+            return this.CanEnd(endingSymbol, symbols, ImmutableHashSet<Rule>.Empty);
+        }
+
+        private bool CanEnd(NonTerminal endingSymbol, IReadOnlyList<Symbol> symbols, ImmutableHashSet<Rule> visited)
+        {
+            for (var i = symbols.Count - 1; i >= 0; --i)
+            {
+                var symbol = symbols[i];
+                if (this.CanEnd(endingSymbol, symbol, visited)) { return true; }
+                if (!this._firstFollowProvider.IsNullable(symbol)) { break; }
+            }
+
+            return false;
+        }
+
+        private bool CanEnd(NonTerminal endingSymbol, Symbol symbol, ImmutableHashSet<Rule> visited)
+        {
+            if (!(symbol is NonTerminal nonTerminal)) { return false; }
+
+            foreach (var rule in this._rulesByProduced[nonTerminal]
+                .Where(r => !visited.Contains(r)))
+            {
+                if (this.CanEnd(endingSymbol, rule.Symbols, visited.Add(rule))) { return true; }
+            }
+
+            return false;
         }
 
         private ImmutableList<Symbol> GetSuffixConstruction(ImmutableList<Symbol> suffix, Token lookaheadToken)

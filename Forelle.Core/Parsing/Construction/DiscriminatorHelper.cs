@@ -168,14 +168,74 @@ namespace Forelle.Parsing.Construction
         /// Gathers the set of <see cref="Symbol"/> lists which could form the remainder after consuming
         /// a <paramref name="prefixToken"/>
         /// </summary>
-        public HashSet<IReadOnlyList<Symbol>> TryGatherPostTokenSuffixes(Token prefixToken, RuleRemainder rule)
+        public Lookup<IReadOnlyList<Symbol>, IReadOnlyList<RuleRemainder>> TryGatherPostTokenSuffixes(Token prefixToken, RuleRemainder rule)
         {
-            var result = new HashSet<IReadOnlyList<Symbol>>(EqualityComparers.GetSequenceComparer<Symbol>());
-            return this.TryGatherPostTokenSuffixes(prefixToken, rule, ImmutableStack<Symbol>.Empty, result)
+            // todo cleanup old code
+
+            var oldResult = new HashSet<IReadOnlyList<Symbol>>(EqualityComparers.GetSequenceComparer<Symbol>());
+            var oldRet = this.TryGatherPostTokenSuffixes(prefixToken, rule, ImmutableStack<Symbol>.Empty, oldResult);
+
+            var result = new Lookup<IReadOnlyList<Symbol>, IReadOnlyList<RuleRemainder>>(EqualityComparers.GetSequenceComparer<Symbol>());
+            var newRet = this.TryGatherPostTokenSuffixes(prefixToken, ImmutableLinkedList.Create(rule), ImmutableLinkedList<Symbol>.Empty, result);
+
+            if (!oldResult.SetEquals(result.Select(r => r.Key)) || oldRet != newRet)
+            {
+                throw new InvalidOperationException("fdafsd");
+            }
+
+            return newRet
                 ? result
                 : null;
         }
 
+        private bool TryGatherPostTokenSuffixes(
+            Token prefixToken,
+            ImmutableLinkedList<RuleRemainder> expansionPath,
+            ImmutableLinkedList<Symbol> suffix,
+            Lookup<IReadOnlyList<Symbol>, IReadOnlyList<RuleRemainder>> result)
+        {
+            var rule = expansionPath.Head;
+            if (!this._firstFollowProvider.NextOf(rule).Contains(prefixToken))
+            {
+                // if the prefix token can't appear next, then we're done
+                return true;
+            }
+
+            if (rule.Symbols.Count == 0) // out of symbols in the rule
+            {
+                // this means that we are trying to strip out our prefix token,
+                // but we've reached the end of the rule and have no suffix. This means that the prefix
+                // token appears in the follow which prevents us from creating a complete suffix set
+                return false;
+            }
+
+            if (rule.Symbols[0] is NonTerminal nonTerminal)
+            {
+                // todo comment
+                var postExpansionSuffix = suffix.PrependRange(rule.Skip(1).Symbols);
+                var foundExpansionSuffixes = true;
+                foreach (var expansionRule in this._rules[nonTerminal])
+                {
+                    foundExpansionSuffixes &= this.TryGatherPostTokenSuffixes(prefixToken, expansionPath.Prepend(expansionRule.Skip(0)), postExpansionSuffix, result);
+                }
+                
+                return this._firstFollowProvider.FirstOf(nonTerminal).ContainsNull()
+                    ? this.TryGatherPostTokenSuffixes(prefixToken, expansionPath.Tail.Prepend(rule.Skip(1)), suffix, result)
+                    : foundExpansionSuffixes;
+            }
+
+            // todo comment
+            if (rule.Symbols[0] == prefixToken)
+            {
+                result.Add(
+                    rule.Skip(1).Symbols.Concat(suffix).ToArray(),
+                    expansionPath.Reverse().ToArray()
+                );
+            }
+            return true;
+        }
+
+        // todo remove
         /// <param name="prefixToken">the token to be moved past</param>
         /// <param name="rule">the current rule being expanded</param>
         /// <param name="suffix">

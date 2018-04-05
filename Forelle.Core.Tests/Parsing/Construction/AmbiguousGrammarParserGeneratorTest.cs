@@ -1,4 +1,5 @@
-﻿using NUnit.Framework;
+﻿using Forelle.Parsing;
+using NUnit.Framework;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -29,13 +30,55 @@ namespace Forelle.Tests.Parsing.Construction
             errors.Count.ShouldEqual(1);
         }
 
+        [Test]
+        public void TestGrammarWhereAllRulesHaveSuffixesAtAmbiguityPoint()
+        {
+            var rules = new Rules
+            {
+                { A, B, SemiColon },
+                { B, C },
+                { C, SemiColon },
+                { C },
+                { B, D },
+                { D, SemiColon },
+
+                // ensure that C, D are not aliases of B
+                { A, LeftParen, C, RightParen },
+                { B, Plus, D, Minus },
+            };
+
+            var (parser, errors) = ParserGeneratorTest.CreateParser(rules);
+            errors.Count.ShouldEqual(2);
+        }
+
         /// <summary>
         /// Tests parsing an ambiguous grammar with a casting ambiguity similar to what we have in C#/Java
         /// 
         /// E. g. (x)-y could be casting -y to x or could be subtracting y from x.
         /// </summary>
         [Test]
-        public void TestCastAmbiguity()
+        public void TestCaseUnaryMinusAmbiguity()
+        {
+            var term = new NonTerminal("Term");
+
+            var rules = new Rules
+            {
+                { Exp, term },
+                { Exp, term, Minus, Exp },
+
+                { term, Id },
+                { term, LeftParen, Exp, RightParen },
+                { term, Minus, term },
+                { term, LeftParen, Id, RightParen, term }, // cast
+            };
+
+            var (parser, errors) = ParserGeneratorTest.CreateParser(rules);
+            errors.Count.ShouldEqual(1);
+            Assert.That(errors[0], Does.Contain("Full context: '( ID ) Term - Exp'"));
+        }
+
+        [Test]
+        public void TestCastPrecedenceAmbiguity()
         {
             var cast = new NonTerminal("Cast");
             var term = new NonTerminal("Term");
@@ -60,6 +103,31 @@ namespace Forelle.Tests.Parsing.Construction
 
             var (parser, errors) = ParserGeneratorTest.CreateParser(rules);
             errors.Count.ShouldEqual(1);
+            Assert.That(errors[0], Does.Contain("Full context: '( ID ) Term - Exp'"));
+
+            var resolution = AmbiguityResolution.WhenParsing("Exp")
+                .UponEncountering("-")
+                .Prefer(new[] { "Term", "-", "Exp" }, atIndex: 1)
+                .Over(new[] { "Term" }, atIndex: 1)
+                .ToAmbiguityResolution();
+            (parser, errors) = ParserGeneratorTest.CreateParser(rules, resolution);
+            Assert.IsEmpty(errors);
+
+            parser.Parse(new[] { LeftParen, Id, RightParen, Id, Minus, Id }, Exp);
+            ParserGeneratorTest.ToGroupedTokenString(parser.Parsed)
+                .ShouldEqual("(( ID ) (ID - ID))");
+
+            var resolution2 = AmbiguityResolution.WhenParsing("Exp")
+                .UponEncountering("-")
+                .Prefer(new[] { "Term" }, atIndex: 1)
+                .Over(new[] { "Term", "-", "Exp" }, atIndex: 1)
+                .ToAmbiguityResolution();
+            (parser, errors) = ParserGeneratorTest.CreateParser(rules, resolution2);
+            Assert.IsEmpty(errors);
+
+            parser.Parse(new[] { LeftParen, Id, RightParen, Id, Minus, Id }, Exp);
+            ParserGeneratorTest.ToGroupedTokenString(parser.Parsed)
+                .ShouldEqual("((( ID ) ID) - ID)");
         }
     }
 }

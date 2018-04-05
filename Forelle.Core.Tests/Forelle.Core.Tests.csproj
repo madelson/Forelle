@@ -31,6 +31,9 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="ImmutableLinkedList, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\packages\ImmutableLinkedList.1.0.0\lib\net45\ImmutableLinkedList.dll</HintPath>
+    </Reference>
     <Reference Include="MedallionCollections, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <HintPath>..\packages\MedallionCollections.1.1.0\lib\net45\MedallionCollections.dll</HintPath>
     </Reference>
