@@ -71,9 +71,16 @@ namespace Forelle.Parsing.Construction
             Token lookaheadToken)
             : base(lookaheadToken, Guard.NotNullOrContainsNullAndDefensiveCopy(ruleMappings, nameof(ruleMappings)))
         {
-            if (!(this.RuleMappings.Only(m => m.DiscriminatorRule.Produced.SyntheticInfo) is DiscriminatorSymbolInfo))
+            foreach (var ruleMapping in ruleMappings)
             {
-                throw new ArgumentException(nameof(ruleMappings), "the discriminator rule must produce a discriminator symbol");
+                foreach (var expansionPath in ruleMapping.ExpansionPaths)
+                {
+                    var lastSegment = expansionPath[expansionPath.Count - 1];
+                    if (lastSegment.Symbols[0] != lookaheadToken)
+                    {
+                        throw new ArgumentException($"invalid expansion path {string.Join(" -> ", expansionPath)}: must end with the lookahead token", nameof(ruleMappings));
+                    }
+                }
             }
         }
 
