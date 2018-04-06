@@ -57,6 +57,10 @@ namespace Forelle.Parsing.Construction
                 {
                     throw new ArgumentException("must produce a discriminator symbol", nameof(discriminatorRule));
                 }
+                if (this.MappedRule.Produced == this.DiscriminatorRule.Produced)
+                {
+                    throw new ArgumentException("must map to a different non-terminal");
+                }
             }
 
             public Rule DiscriminatorRule { get; }
@@ -128,6 +132,11 @@ namespace Forelle.Parsing.Construction
             public RuleMapping(Rule discriminatorRule, RuleRemainder mappedRule)
                 : base(discriminatorRule, mappedRule)
             {
+                if (!(mappedRule.Produced.SyntheticInfo is DiscriminatorSymbolInfo))
+                {
+                    throw new ArgumentException("prefix rule mapping must map to a discriminator rule");
+                }
+
                 if (!IsValidPrefixMapping(discriminatorRule, mappedRule))
                 {
                     throw new ArgumentException("discriminator rule must be a prefix of the mapped rule", nameof(discriminatorRule));
