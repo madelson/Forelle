@@ -50,7 +50,15 @@ namespace Forelle.Parsing.Construction
                 r => r,
                 r => this.ExpandContexts(DefaultParseOf(r.Rule), lookaheadToken, r.Start).ToArray()
             );
-            
+
+            var first = results.First().Value[0];
+            var second = results.ElementAt(1).Value[0];
+            if (this.Unify(first, second, out var unifiedFirst, out var unifiedSecond))
+            {
+                Console.WriteLine(unifiedFirst);
+                Console.WriteLine(unifiedSecond);
+            }
+
             throw new NotImplementedException();
         }
         
@@ -257,7 +265,220 @@ namespace Forelle.Parsing.Construction
             var result = expanded.SelectMany(t => this.ExpandNonDiscriminatorContexts(t.node, lookaheadToken, t.position, alreadyExpanded: alreadyExpanded.Add(t.node.Rule)));
             return result.ToArray();
         }
+
+        // unify alg
+        // - if one list ended
+        // 1. if token match => proceed (++
+        // 2. if token mismatch => fail
+        // 3. consider all expansions of each non-terminal => enqueue all (if matching non-terminals, also consider that)
+        //
+
+        private bool Unify(PotentialParseNode a, PotentialParseNode b, out PotentialParseNode unifiedA, out PotentialParseNode unifiedB)
+        {
+            const int MaxExpansionCount = 20;
+
+            var priorityQueue = new PriorityQueue<UnifyState>();
+            priorityQueue.Enqueue(new UnifyState(
+                pathA: GetFirstPath(a),
+                pathB: GetFirstPath(b),
+                expansionCount: 0,
+                progressCount: 0
+            ));
+
+            while (priorityQueue.Count > 0)
+            {
+                var currentState = priorityQueue.Dequeue();
+
+                var symbolA = currentState.PathA.Head.node.Symbol;
+                var symbolB = currentState.PathB.Head.node.Symbol;
+
+                // if the symbols match, we can advance both paths
+                if (symbolA == symbolB)
+                {
+                    var canAdvanceA = TryGetNext(currentState.PathA, out var nextPathA);
+                    var canAdvanceB = TryGetNext(currentState.PathB, out var nextPathB);
+                    if (canAdvanceA && canAdvanceB)
+                    {
+                        priorityQueue.Enqueue(new UnifyState(nextPathA, nextPathB, currentState.ExpansionCount, currentState.ProgressCount + 1));
+                    }
+                    else if (!canAdvanceA && !canAdvanceB)
+                    {
+                        // reached the end of both => return
+                        unifiedA = currentState.PathA.Last().node;
+                        unifiedB = currentState.PathB.Last().node;
+                        return true;
+                    }
+                }
+
+                // try to make things match by expanding non-terminal symbols
+                if (currentState.ExpansionCount < MaxExpansionCount)
+                {
+                    for (var i = 0; i < 2; ++i)
+                    {
+                        var expandingA = i == 0;
+                        if ((expandingA ? symbolA : symbolB) is NonTerminal nonTerminal)
+                        {
+                            foreach (var rule in this._rulesByProduced[nonTerminal])
+                            {
+                                if (TryGetPathAfterExpansion(
+                                    expandingA ? currentState.PathA : currentState.PathB,
+                                    rule,
+                                    out var expandedPath))
+                                {
+                                    priorityQueue.Enqueue(new UnifyState(
+                                        pathA: expandingA ? expandedPath : currentState.PathA,
+                                        pathB: expandingA ? currentState.PathB : expandedPath,
+                                        expansionCount: currentState.ExpansionCount + 1,
+                                        progressCount: currentState.ProgressCount
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            unifiedA = unifiedB = null;
+            return false;
+        }
         
+        private sealed class UnifyState : IComparable<UnifyState>
+        {
+            public UnifyState(
+                ImmutableLinkedList<(PotentialParseNode node, int index)> pathA,
+                ImmutableLinkedList<(PotentialParseNode node, int index)> pathB,
+                int expansionCount,
+                int progressCount)
+            {
+                this.PathA = pathA;
+                this.PathB = pathB;
+                this.ExpansionCount = expansionCount;
+                this.ProgressCount = progressCount;
+            }
+
+            public ImmutableLinkedList<(PotentialParseNode node, int index)> PathA { get; }
+            public ImmutableLinkedList<(PotentialParseNode node, int index)> PathB { get; }
+            /// <summary>
+            /// # of expansions used to transform either A or B
+            /// </summary>
+            public int ExpansionCount { get; }
+            /// <summary>
+            /// # of leaf nodes matched up between A and B before reaching the current path
+            /// </summary>
+            public int ProgressCount { get; }
+
+            int IComparable<UnifyState>.CompareTo(UnifyState that)
+            {
+                var expansionCountComparison = this.ExpansionCount.CompareTo(that.ExpansionCount);
+                if (expansionCountComparison != 0) { return expansionCountComparison; }
+
+                var progressCountComparison = this.ProgressCount.CompareTo(that.ProgressCount);
+                if (progressCountComparison != 0) { return progressCountComparison; }
+
+                return 0;
+            }
+        }
+
+        private static bool TryGetNext(ImmutableLinkedList<(PotentialParseNode node, int index)> current, out ImmutableLinkedList<(PotentialParseNode node, int index)> next)
+        {
+            var (head, tail) = current; // always works: a valid path cannot be empty
+
+            if (tail.Count > 0) // if we have a parent...
+            {
+                // ...try expanding later children
+                var parent = (PotentialParseParentNode)tail.Head.node;
+                for (var i = head.index + 1; i < parent.Children.Count; ++i)
+                {
+                    if (TryExpandFirstPath(tail.Prepend((node: parent.Children[i], index: i)), out next))
+                    {
+                        return true;
+                    }
+                }
+
+                // otherwise recurse on the parent's parent
+                return TryGetNext(tail, out next);
+            }
+
+            next = default;
+            return false;
+        }
+
+        private static ImmutableLinkedList<(PotentialParseNode node, int index)> GetFirstPath(PotentialParseNode node)
+        {
+            Invariant.Require(
+                TryExpandFirstPath(ImmutableLinkedList.Create((node, index: 0)), out var result),
+                "Empty parse node"
+            );
+
+            return result;
+        }
+
+        private static bool TryExpandFirstPath(
+            ImmutableLinkedList<(PotentialParseNode node, int index)> basePath,
+            out ImmutableLinkedList<(PotentialParseNode node, int index)> result)
+        {
+            var (head, tail) = basePath;
+            if (head.node is PotentialParseParentNode parent)
+            {
+                for (var i = 0; i < parent.Children.Count; ++i)
+                {
+                    if (TryExpandFirstPath(basePath.Prepend((node: parent.Children[i], index: i)), out result))
+                    {
+                        return true;
+                    }
+                }
+
+                result = default;
+                return false;
+            }
+
+            result = basePath;
+            return true;
+        }
+
+        private static bool TryGetPathAfterExpansion(
+            ImmutableLinkedList<(PotentialParseNode node, int index)> path,
+            Rule rule,
+            out ImmutableLinkedList<(PotentialParseNode node, int index)> nextPath)
+        {
+            Invariant.Require(path.Head.node is PotentialParseLeafNode);
+
+            // build a new path replacing the leaft with a default parse of the rule
+            var newPath = ReplaceLeafNode(path, DefaultParseOf(rule));
+
+            // if the rule has children, then we will return a path pointing to the first child
+            if (rule.Symbols.Count > 0)
+            {
+                nextPath = newPath.Prepend((node: ((PotentialParseParentNode)newPath.Head.node).Children[0], index: 0));
+                return true;
+            }
+
+            // if the rule does not have children, then we need to search for the next valid path
+            return TryGetNext(newPath, out nextPath);
+        }
+
+        private static ImmutableLinkedList<(PotentialParseNode node, int index)> ReplaceLeafNode(
+            ImmutableLinkedList<(PotentialParseNode node, int index)> path,
+            PotentialParseNode replacement)
+        {
+            var (head, tail) = path;
+            Invariant.Require(head.node.Symbol == replacement.Symbol);
+
+            // base case
+            if (tail.Count == 0)
+            {
+                return ImmutableLinkedList.Create((node: replacement, index: 0));
+            }
+
+            // recursive case: compute an expanded parent and expand tail as that
+            var parent = (PotentialParseParentNode)tail.Head.node;
+            var expandedParent = new PotentialParseParentNode(
+                parent.Rule,
+                parent.Children.Select((ch, index) => index == head.index ? replacement : ch)
+            );
+            return ReplaceLeafNode(tail, expandedParent).Prepend((node: replacement, head.index)); 
+        }
+
         private bool IsNullable(PotentialParseNode node)
         {
             return node is PotentialParseParentNode parent
