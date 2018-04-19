@@ -24,6 +24,7 @@ namespace Forelle.Tests
             QuestionMark = new Token("?"),
             Return = new Token("return"),
             Comma = new Token(","),
+            Dot = new Token("."),
             OpenBracket = new Token("["),
             CloseBracket = new Token("]"),
             OpenBrace = new Token("{"),

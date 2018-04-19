@@ -54,6 +54,7 @@ namespace Forelle.Parsing.Construction
 
             var contextualizer = new AmbiguityContextualizer(this._rulesByProduced, this._firstFollowProvider, this._discriminatorContexts);
             contextualizer.GetExpandedAmbiguityContexts(rules, lookaheadToken);
+            return (rules[0], "see console output");
 
             // construct a helpful error message
             var longestConstruction = rules.Select(r => this.GetConstruction(r, lookaheadToken))

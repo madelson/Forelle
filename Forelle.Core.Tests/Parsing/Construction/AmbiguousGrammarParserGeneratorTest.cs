@@ -22,12 +22,17 @@ namespace Forelle.Tests.Parsing.Construction
                 { Exp, foo },
                 { Exp, bar },
 
+                // make foo/bar not aliases
+                { Stmt, foo, Dot },
+                { Stmt, bar, SemiColon },
+
                 { foo, Id },
                 { bar, Id },
             };
 
             var (parser, errors) = ParserGeneratorTest.CreateParser(rules);
             errors.Count.ShouldEqual(1);
+            throw new NotImplementedException(); // more checks
         }
 
         [Test]
@@ -57,7 +62,7 @@ namespace Forelle.Tests.Parsing.Construction
         /// E. g. (x)-y could be casting -y to x or could be subtracting y from x.
         /// </summary>
         [Test]
-        public void TestCaseUnaryMinusAmbiguity()
+        public void TestCastUnaryMinusAmbiguity()
         {
             var term = new NonTerminal("Term");
 
@@ -99,6 +104,8 @@ namespace Forelle.Tests.Parsing.Construction
                 { term, cast },
                 
                 { cast, LeftParen, Id, RightParen, Exp },
+                // make cast not an alias
+                { A, Plus, cast, Plus }
             };
 
             var (parser, errors) = ParserGeneratorTest.CreateParser(rules);

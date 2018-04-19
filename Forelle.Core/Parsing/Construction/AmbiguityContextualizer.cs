@@ -59,7 +59,8 @@ namespace Forelle.Parsing.Construction
                 Console.WriteLine(unifiedSecond);
             }
 
-            throw new NotImplementedException();
+            return null;
+            //throw new NotImplementedException();
         }
         
         private IReadOnlyList<PotentialParseNode> ExpandContexts(PotentialParseParentNode node, Token lookaheadToken, int position)
@@ -266,23 +267,24 @@ namespace Forelle.Parsing.Construction
             return result.ToArray();
         }
 
-        // unify alg
-        // - if one list ended
-        // 1. if token match => proceed (++
-        // 2. if token mismatch => fail
-        // 3. consider all expansions of each non-terminal => enqueue all (if matching non-terminals, also consider that)
-        //
-
+        // todo n-way unify instead of 2-way
+        // todo avoid building paths until we eval the node
         private bool Unify(PotentialParseNode a, PotentialParseNode b, out PotentialParseNode unifiedA, out PotentialParseNode unifiedB)
         {
             const int MaxExpansionCount = 20;
 
             var priorityQueue = new PriorityQueue<UnifyState>();
+            var initialPathA = GetFirstPath(a);
+            var initialPathB = GetFirstPath(b);
             priorityQueue.Enqueue(new UnifyState(
-                pathA: GetFirstPath(a),
-                pathB: GetFirstPath(b),
+                pathA: initialPathA,
+                pathB: initialPathB,
                 expansionCount: 0,
-                progressCount: 0
+                progressCount: 0,
+                leafNodeCount: initialPathA.Last().node.EnumerateLeafNodes()
+                    .Concat(initialPathB.Last().node.EnumerateLeafNodes())
+                    .Count(),
+                canHaveRootExpansions: true
             ));
 
             while (priorityQueue.Count > 0)
@@ -299,20 +301,32 @@ namespace Forelle.Parsing.Construction
                     var canAdvanceB = TryGetNext(currentState.PathB, out var nextPathB);
                     if (canAdvanceA && canAdvanceB)
                     {
-                        priorityQueue.Enqueue(new UnifyState(nextPathA, nextPathB, currentState.ExpansionCount, currentState.ProgressCount + 1));
+                        priorityQueue.Enqueue(new UnifyState(
+                            pathA: nextPathA, 
+                            pathB: nextPathB, 
+                            expansionCount: currentState.ExpansionCount, 
+                            progressCount: currentState.ProgressCount + 1,
+                            leafNodeCount: currentState.LeafNodeCount,
+                            canHaveRootExpansions: false
+                        ));
                     }
                     else if (!canAdvanceA && !canAdvanceB)
                     {
                         // reached the end of both => return
                         unifiedA = currentState.PathA.Last().node;
                         unifiedB = currentState.PathB.Last().node;
-                        return true;
+                        // it's possible to find equivalent expansions. However, this can't
+                        // be the ambiguous case so just ignore it
+                        if (!AreEquivalent(unifiedA, unifiedB))
+                        {
+                            return true;
+                        }
                     }
                 }
 
-                // try to make things match by expanding non-terminal symbols
                 if (currentState.ExpansionCount < MaxExpansionCount)
                 {
+                    // try to make things match by expanding non-terminal symbols
                     for (var i = 0; i < 2; ++i)
                     {
                         var expandingA = i == 0;
@@ -329,9 +343,44 @@ namespace Forelle.Parsing.Construction
                                         pathA: expandingA ? expandedPath : currentState.PathA,
                                         pathB: expandingA ? currentState.PathB : expandedPath,
                                         expansionCount: currentState.ExpansionCount + 1,
-                                        progressCount: currentState.ProgressCount
+                                        progressCount: currentState.ProgressCount,
+                                        // we are replacing a leaf with N leaves, so the leave increase is N - 1.
+                                        // Since N can be 0, this can yield a net decrease
+                                        leafNodeCount: currentState.LeafNodeCount + (rule.Symbols.Count - 1),
+                                        canHaveRootExpansions: false
                                     ));
                                 }
+                            }
+                        }
+                    }
+
+                    // consider outer expansions
+                    if (currentState.CanHaveRootExpansions)
+                    {
+                        for (var i = 0; i < 2; ++i)
+                        {
+                            var expandingA = i == 0;
+                            var rootNode = (expandingA ? currentState.PathA : currentState.PathB).Last().node;
+                            foreach (var reference in this._nonDiscriminatorSymbolReferences.Value[rootNode.Symbol])
+                            {
+                                var newRootNode = new PotentialParseParentNode(
+                                    reference.rule,
+                                    reference.rule.Symbols.Select((s, index) => index == reference.index ? rootNode : new PotentialParseLeafNode(s))
+                                );
+                                var newPath = GetFirstPath(newRootNode);
+                                var newPathA = expandingA ? newPath : currentState.PathA;
+                                var newPathB = expandingA ? currentState.PathB : newPath;
+                                priorityQueue.Enqueue(new UnifyState(
+                                    pathA: newPathA,
+                                    pathB: newPathB,
+                                    expansionCount: currentState.ExpansionCount + 1,
+                                    progressCount: 0,
+                                    // todo if we kept leaf counts separate we could re-use some of the counting here
+                                    leafNodeCount: newPathA.Last().node.EnumerateLeafNodes()
+                                        .Concat(newPathB.Last().node.EnumerateLeafNodes())
+                                        .Count(),
+                                    canHaveRootExpansions: true
+                                ));
                             }
                         }
                     }
@@ -341,6 +390,31 @@ namespace Forelle.Parsing.Construction
             unifiedA = unifiedB = null;
             return false;
         }
+
+        private static bool AreEquivalent(PotentialParseNode a, PotentialParseNode b)
+        {
+            if (a.Symbol != b.Symbol) { return false; }
+
+            if (a is PotentialParseParentNode parentA)
+            {
+                if (b is PotentialParseParentNode parentB)
+                {
+                    if (parentA.Rule != parentB.Rule) { return false; }
+
+                    for (var i = 0; i < parentA.Children.Count; ++i)
+                    {
+                        if (!AreEquivalent(parentA.Children[i], parentB.Children[i])) { return false; }
+                    }
+
+                    return true;
+                }
+
+                return false; // b is a leaf
+            }
+
+            // if we get here, a is a leaf whose symbol matches b. If b is also a leaf then they match!
+            return b is PotentialParseLeafNode;
+        }
         
         private sealed class UnifyState : IComparable<UnifyState>
         {
@@ -348,12 +422,20 @@ namespace Forelle.Parsing.Construction
                 ImmutableLinkedList<(PotentialParseNode node, int index)> pathA,
                 ImmutableLinkedList<(PotentialParseNode node, int index)> pathB,
                 int expansionCount,
-                int progressCount)
+                int progressCount,
+                int leafNodeCount,
+                bool canHaveRootExpansions)
             {
+                Invariant.Require(!canHaveRootExpansions || progressCount == 0);
+
                 this.PathA = pathA;
                 this.PathB = pathB;
                 this.ExpansionCount = expansionCount;
                 this.ProgressCount = progressCount;
+                this.LeafNodeCount = leafNodeCount;
+                this.CanHaveRootExpansions = canHaveRootExpansions;
+
+                Invariant.Require(this.RemainingCount >= 0);
             }
 
             public ImmutableLinkedList<(PotentialParseNode node, int index)> PathA { get; }
@@ -366,14 +448,25 @@ namespace Forelle.Parsing.Construction
             /// # of leaf nodes matched up between A and B before reaching the current path
             /// </summary>
             public int ProgressCount { get; }
+            /// <summary>
+            /// The total # of leaf nodes between the root nodes in all paths
+            /// </summary>
+            public int LeafNodeCount { get; }
+            /// <summary>
+            /// True only if the node qualifies for root expansions
+            /// </summary>
+            public bool CanHaveRootExpansions { get; }
+
+            // We count progress twice because leafcount is across A and B but progress is made equally in both
+            private int RemainingCount => this.LeafNodeCount - (2 * this.ProgressCount);
 
             int IComparable<UnifyState>.CompareTo(UnifyState that)
             {
                 var expansionCountComparison = this.ExpansionCount.CompareTo(that.ExpansionCount);
                 if (expansionCountComparison != 0) { return expansionCountComparison; }
 
-                var progressCountComparison = this.ProgressCount.CompareTo(that.ProgressCount);
-                if (progressCountComparison != 0) { return progressCountComparison; }
+                var remainingCountComparison = this.RemainingCount.CompareTo(that.RemainingCount);
+                if (remainingCountComparison != 0) { return remainingCountComparison; }
 
                 return 0;
             }
