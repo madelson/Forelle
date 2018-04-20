@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace Forelle.Tests
@@ -21,6 +22,16 @@ namespace Forelle.Tests
         {
             Assert.AreNotEqual(actual: actual, expected: expected, message: message);
             return actual;
+        }
+
+        public static string ShouldEqualIgnoreIndentation(this string actual, string expected, string message = null)
+        {
+            return StripIndendation(actual).ShouldEqual(StripIndendation(expected));
+        }
+
+        private static string StripIndendation(string text)
+        {
+            return text == null ? null : Regex.Replace(text.Trim(), @"\r?\n[ \t]*", "\r\n");
         }
 
         public static IEnumerable<T> CollectionShouldEqual<T>(this IEnumerable<T> actual, IEnumerable<T> expected, string message = null)

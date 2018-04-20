@@ -98,6 +98,11 @@ namespace Forelle.Tests
         {
         }
 
+        public Rule this[NonTerminal produced, params Symbol[] symbols]
+        {
+            get => this.Single(r => r.Produced == produced && r.Symbols.SequenceEqual(symbols));
+        }
+
         public void Add(NonTerminal produced, params Symbol[] symbols)
         {
             this.Add(new Rule(produced, symbols));

@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using static Forelle.Tests.TestGrammar;
+using static Forelle.Parsing.PotentialParseNode;
 
 namespace Forelle.Tests.Parsing.Construction
 {
@@ -100,7 +101,6 @@ namespace Forelle.Tests.Parsing.Construction
                 { Exp, term, Minus, Exp },
                 
                 { term, Id },
-                { term, LeftParen, Exp, RightParen },
                 { term, cast },
                 
                 { cast, LeftParen, Id, RightParen, Exp },
@@ -110,31 +110,42 @@ namespace Forelle.Tests.Parsing.Construction
 
             var (parser, errors) = ParserGeneratorTest.CreateParser(rules);
             errors.Count.ShouldEqual(1);
-            Assert.That(errors[0], Does.Contain("Full context: '( ID ) Term - Exp'"));
+            errors[0].ShouldEqualIgnoreIndentation(
+@"Unable to distinguish between the following parse trees for the sequence of symbols [""("" ID "")"" Term - Exp]:
+    Exp(Term(Cast(""("" ID "")"" Exp(Term))) - Exp)
+	Cast(""("" ID "")"" Exp(Term - Exp))"
+            );
 
-            var resolution = AmbiguityResolution.WhenParsing("Exp")
-                .UponEncountering("-")
-                .Prefer(new[] { "Term", "-", "Exp" }, atIndex: 1)
-                .Over(new[] { "Term" }, atIndex: 1)
-                .ToAmbiguityResolution();
+            // make cast bind tighter
+            var resolution = new AmbiguityResolution(
+                Create(
+                    rules[Exp, term, Minus, Exp],
+                    Create(
+                        rules[term, cast],
+                        Create(
+                            rules[cast, LeftParen, Id, RightParen, Exp],
+                            LeftParen, Id, RightParen, rules[Exp, term]
+                        )
+                    ),
+                    Minus,
+                    Exp
+                ),
+                Create(
+                    rules[cast, LeftParen, Id, RightParen, Exp],
+                    LeftParen, Id, RightParen,
+                    rules[Exp, term, Minus, Exp]
+                )
+            );
             (parser, errors) = ParserGeneratorTest.CreateParser(rules, resolution);
             Assert.IsEmpty(errors);
 
-            parser.Parse(new[] { LeftParen, Id, RightParen, Id, Minus, Id }, Exp);
-            ParserGeneratorTest.ToGroupedTokenString(parser.Parsed)
-                .ShouldEqual("(( ID ) (ID - ID))");
+            //parser.Parse(new[] { LeftParen, Id, RightParen, Id, Minus, Id }, Exp);
+            //ParserGeneratorTest.ToGroupedTokenString(parser.Parsed)
+            //    .ShouldEqual("((( ID ) ID) - ID)");
+            parser.Parse(new[] { Id, Minus, Id }, Exp);
 
-            var resolution2 = AmbiguityResolution.WhenParsing("Exp")
-                .UponEncountering("-")
-                .Prefer(new[] { "Term" }, atIndex: 1)
-                .Over(new[] { "Term", "-", "Exp" }, atIndex: 1)
-                .ToAmbiguityResolution();
-            (parser, errors) = ParserGeneratorTest.CreateParser(rules, resolution2);
-            Assert.IsEmpty(errors);
-
-            parser.Parse(new[] { LeftParen, Id, RightParen, Id, Minus, Id }, Exp);
-            ParserGeneratorTest.ToGroupedTokenString(parser.Parsed)
-                .ShouldEqual("((( ID ) ID) - ID)");
+            // todo what if we resolve the other way?
+            // todo would be nice to express resolutions as strings in tests...
         }
     }
 }

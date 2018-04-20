@@ -39,28 +39,38 @@ namespace Forelle.Parsing.Construction
             );
         }
 
-        public List<List<PotentialParseNode>> GetExpandedAmbiguityContexts(IReadOnlyList<RuleRemainder> rules, Token lookaheadToken)
+        public Dictionary<RuleRemainder, PotentialParseNode>[] GetExpandedAmbiguityContexts(IReadOnlyList<RuleRemainder> rules, Token lookaheadToken)
         {
             Guard.NotNullOrContainsNull(rules, nameof(rules));
             if (lookaheadToken == null) { throw new ArgumentNullException(nameof(lookaheadToken)); }
-
-            //if ("a"[0] == 'a') { throw new NotImplementedException(); }
-
+            
             var results = rules.ToDictionary(
                 r => r,
                 r => this.ExpandContexts(DefaultParseOf(r.Rule), lookaheadToken, r.Start).ToArray()
             );
 
-            var first = results.First().Value[0];
-            var second = results.ElementAt(1).Value[0];
+            // todo remove limitations
+            Invariant.Require(rules.Count == 2);
+            Invariant.Require(results.Values.All(a => a.Length == 1));
+
+            var first = results[rules[0]][0];
+            var second = results[rules[1]][0];
             if (this.Unify(first, second, out var unifiedFirst, out var unifiedSecond))
             {
                 Console.WriteLine(unifiedFirst);
                 Console.WriteLine(unifiedSecond);
+
+                return new[]
+                {
+                    new Dictionary<RuleRemainder, PotentialParseNode>
+                    {
+                        { rules[0], unifiedFirst },
+                        { rules[1], unifiedSecond }
+                    }
+                };
             }
 
-            return null;
-            //throw new NotImplementedException();
+            throw new NotImplementedException();
         }
         
         private IReadOnlyList<PotentialParseNode> ExpandContexts(PotentialParseParentNode node, Token lookaheadToken, int position)
