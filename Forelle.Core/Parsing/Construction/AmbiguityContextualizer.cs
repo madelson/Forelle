@@ -281,9 +281,8 @@ namespace Forelle.Parsing.Construction
                 pathB: initialPathB,
                 expansionCount: 0,
                 progressCount: 0,
-                leafNodeCount: initialPathA.Last().node.EnumerateLeafNodes()
-                    .Concat(initialPathB.Last().node.EnumerateLeafNodes())
-                    .Count(),
+                leafNodeCount: initialPathA.Last().node.Leaves.Count
+                    + initialPathB.Last().node.Leaves.Count,
                 canHaveRootExpansions: true
             ));
 
@@ -376,9 +375,8 @@ namespace Forelle.Parsing.Construction
                                     expansionCount: currentState.ExpansionCount + 1,
                                     progressCount: 0,
                                     // todo if we kept leaf counts separate we could re-use some of the counting here
-                                    leafNodeCount: newPathA.Last().node.EnumerateLeafNodes()
-                                        .Concat(newPathB.Last().node.EnumerateLeafNodes())
-                                        .Count(),
+                                    leafNodeCount: newPathA.Last().node.Leaves.Count
+                                        + newPathB.Last().node.Leaves.Count,
                                     canHaveRootExpansions: true
                                 ));
                             }
@@ -600,65 +598,6 @@ namespace Forelle.Parsing.Construction
                 rule,
                 rule.Symbols.Select(s => new PotentialParseLeafNode(s))
             );
-        }
-        
-        internal abstract class PotentialParseNode
-        {
-            protected PotentialParseNode(Symbol symbol)
-            {
-                this.Symbol = symbol ?? throw new ArgumentNullException(nameof(symbol));
-            }
-
-            public Symbol Symbol { get; }
-
-            public abstract IEnumerable<PotentialParseLeafNode> EnumerateLeafNodes();
-
-            protected static string ToString(Symbol symbol) => symbol.Name.Any(char.IsWhiteSpace)
-                || symbol.Name.IndexOf('(') >= 0
-                || symbol.Name.IndexOf(')') >= 0
-                ? $"\"{symbol.Name}\""
-                : symbol.Name;
-        }
-        
-        internal sealed class PotentialParseLeafNode : PotentialParseNode
-        {
-            public PotentialParseLeafNode(Symbol symbol)
-                : base(symbol)
-            {
-            }
-
-            public override IEnumerable<PotentialParseLeafNode> EnumerateLeafNodes() { yield return this; }
-
-            public override string ToString() => ToString(this.Symbol);
-        }
-
-        internal sealed class PotentialParseParentNode : PotentialParseNode
-        {
-            public PotentialParseParentNode(Rule rule, IEnumerable<PotentialParseNode> children)
-                : base(rule.Produced)
-            {
-                this.Rule = rule;
-                this.Children = Guard.NotNullOrContainsNullAndDefensiveCopy(children, nameof(children));
-
-                if (!this.Rule.Symbols.SequenceEqual(this.Children.Select(c => c.Symbol))) { throw new ArgumentException("rule symbols and child symbols must match"); }
-            }
-
-            public Rule Rule { get; }
-
-            public IReadOnlyList<PotentialParseNode> Children { get; }
-
-            public override IEnumerable<PotentialParseLeafNode> EnumerateLeafNodes()
-            {
-                foreach (var child in this.Children)
-                {
-                    foreach (var leaf in child.EnumerateLeafNodes())
-                    {
-                        yield return leaf;
-                    }
-                }
-            }
-
-            public override string ToString() => $"{ToString(this.Symbol)}({string.Join(" ", this.Children)})";
         }
     }
 }
