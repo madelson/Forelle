@@ -211,27 +211,42 @@ namespace Forelle.Parsing.Construction
 
             if (rule.Symbols[0] is NonTerminal nonTerminal)
             {
-                // todo comment
+                // if the first symbol is a non-terminal, try each expansion of that non-terminal. We 
+                // add the rest of the current rule's symbols to the suffix
                 var postExpansionSuffix = suffix.PrependRange(rule.Skip(1).Symbols);
                 var foundExpansionSuffixes = true;
                 foreach (var expansionRule in this._rules[nonTerminal])
                 {
+                    // even though we don't need all rule expansions to work, we use &= here rather than |=. This is because
+                    // failing to add to result doesn't indicate failure; failure is ONLY when we reach the end of the rule 
+                    // without finding the token but still could find it in the follow. Because of this, any failure indicates
+                    // a potential problem. "Potential" is key since if the problem is due to the CURRENT non-terminal reducing to
+                    // null, then we're ok so long as we still have symbols left in the current rule/suffix (see below)
                     foundExpansionSuffixes &= this.TryGatherPostTokenSuffixes(prefixToken, expansionPath.Prepend(expansionRule.Skip(0)), postExpansionSuffix, result);
                 }
-                
+
+                // finally, if the symbol is nullable, we consider the case where it produces null and the 
+                // lookahead appears after it. In this case we create a new expansion path that moves the start pointer
+                // on the current rule forwards
                 return this._firstFollowProvider.FirstOf(nonTerminal).ContainsNull()
+                    // if the current symbol is nullable, then we also have to succeed in the expansion that skips that
+                    // symbol. If we do succeed in this, then it's ok if some of our other expansions failed. Really the only
+                    // failures that matter are when we exhaust the symbols in the current rule AND the suffix is empty
                     ? this.TryGatherPostTokenSuffixes(prefixToken, expansionPath.Tail.Prepend(rule.Skip(1)), suffix, result)
                     : foundExpansionSuffixes;
             }
 
-            // todo comment
-            if (rule.Symbols[0] == prefixToken)
-            {
-                result.Add(
-                    rule.Skip(1).Symbols.Concat(suffix).ToArray(),
-                    expansionPath.Reverse().ToArray()
-                );
-            }
+            // if we reach this point, then first symbol IS the token we're looking for.
+            // This is because (a) we've checked that the token is in the Next set, (b)
+            // We've checked that they rule has at least one symbols and (c) we've checked
+            // that the symbol is not a non-terminal (and therefore is a token)
+            Invariant.Require(rule.Symbols[0] == prefixToken);
+            // therefore, whe can build a complete suffix set by just dropping the token
+            // from the current rule and adding the rest of the symbols to the suffix
+            result.Add(
+                rule.Skip(1).Symbols.Concat(suffix).ToArray(),
+                expansionPath.Reverse().ToArray()
+            );
             return true;
         }
 
