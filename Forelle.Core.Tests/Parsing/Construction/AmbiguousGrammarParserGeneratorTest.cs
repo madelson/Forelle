@@ -146,6 +146,8 @@ namespace Forelle.Tests.Parsing.Construction
 
             // todo what if we resolve the other way?
             // todo would be nice to express resolutions as strings in tests...
+
+            // todo idea: rather than doing lookback to fix, what if we went back and forced a discriminator rather than a prefix for E -> T - E vs. E -> T?
         }
     }
 }
