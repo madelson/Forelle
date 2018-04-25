@@ -6,18 +6,20 @@ namespace Forelle
 {
     internal static class Invariant
     {
+        // todo add conditional attribute
         public static void Require(bool condition, string message = null)
         {
             if (!condition)
             {
-                throw new InvariantViolatedException(message);
+                throw new InvariantViolatedException(message ?? "invariant violated");
             }
         }
     }
-
-    internal sealed class InvariantViolatedException : Exception
+    
+    internal class InvariantViolatedException : Exception
     {
         public InvariantViolatedException(string message)
+            : base(message)
         {
         }
     }
