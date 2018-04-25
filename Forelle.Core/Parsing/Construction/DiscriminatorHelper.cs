@@ -29,11 +29,36 @@ namespace Forelle.Parsing.Construction
 
         // TODO feels like search should be split out to a separate class
 
-        public NonTerminal FindExactMatchDiscriminatorOrDefault(IReadOnlyList<RuleRemainder> rules, Token lookaheadToken)
+        /// <summary>
+        /// Locates all discriminator symbols which have rules exactly matching each of the given rule right-hand sides.
+        /// 
+        /// A matched discriminator may have additional rules as well.
+        /// </summary>
+        public IReadOnlyCollection<NonTerminal> FindDiscriminatorByRuleSymbols(IReadOnlyCollection<IReadOnlyList<Symbol>> ruleSymbols)
         {
-            return this.FindDiscriminators(rules, lookaheadToken, isPrefixSearch: false)
-                .FirstOrDefault(r => r.IsFollowCompatible)
-                ?.Discriminator;
+            Invariant.Require(ruleSymbols.Count > 0);
+
+            var searchTrie = this.GetSearchTrie();
+            HashSet<NonTerminal> results = null;
+            foreach (var rule in ruleSymbols)
+            {
+                var ruleResults = searchTrie[rule];
+                if (results == null)
+                {
+                    results = new HashSet<NonTerminal>(ruleResults.Select(r => r.Produced));
+                }
+                else
+                {
+                    results.IntersectWith(ruleResults.Select(r => r.Produced));
+                }
+
+                if (results.Count == 0)
+                {
+                    break;
+                }
+            }
+
+            return results;
         }
 
         public List<DiscriminatorPrefixSearchResult> FindPrefixDiscriminators(IReadOnlyList<RuleRemainder> rules, Token lookaheadToken)

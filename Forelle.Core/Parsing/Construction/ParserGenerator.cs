@@ -1,7 +1,6 @@
 ﻿using Medallion.Collections;
 using System;
 using System.Collections.Generic;
-using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
 
@@ -213,7 +212,7 @@ namespace Forelle.Parsing.Construction
             var bestMatch = matches.Where(r => !r.IsExactMatch || r.IsFollowCompatible)
                 .MaxBy(r => r, PrefixSearchResultComparer);
             if (bestMatch == null) { return null; }
-
+            
             if (bestMatch.IsFollowCompatible)
             {
                 this._discriminatorContexts.Add(
@@ -288,27 +287,56 @@ namespace Forelle.Parsing.Construction
             var suffixToRuleMapping = this.TryBuildSuffixToRuleMapping(lookaheadToken, rules);
             if (suffixToRuleMapping == null) { return null; }
 
-            // TODO in the old code we looked for an equivalent existing discriminator here...
-
-            // construct a discriminator symbol
-
-            var discriminator = NonTerminal.CreateSynthetic(
-                "T" + this._rulesByProduced.Keys.Count(k => k.SyntheticInfo is DiscriminatorSymbolInfo),
-                new DiscriminatorSymbolInfo()
-            );
-            var rulesAndFollowSets = suffixToRuleMapping.ToDictionary(
-                kvp => new Rule(discriminator, kvp.Key, kvp.Value.rule.Rule.ExtendedInfo), 
-                kvp => this._firstFollow.FollowOf(kvp.Value.rule.Rule)
+            var ruleSymbolsAndFollowSets = suffixToRuleMapping.ToDictionary(
+                kvp => kvp.Key,
+                kvp => this._firstFollow.FollowOf(kvp.Value.rule.Rule),
+                suffixToRuleMapping.Comparer
             );
 
-            this._rulesByProduced.Add(discriminator, rulesAndFollowSets.Keys.ToArray());
-            this._firstFollow.Add(rulesAndFollowSets);
-            this._generatorQueue.Enqueue(new NodeContext(rulesAndFollowSets.Keys.Select(r => r.Skip(0))));
+            NonTerminal discriminator;
+            IReadOnlyCollection<Rule> discriminatorRules;
+
+            // see if we already have a discriminator which can be used here
+            // first lookup to see if any discriminator has rules with the symbols we want
+            var matchingDiscriminators = this._discriminatorHelper.FindDiscriminatorByRuleSymbols(ruleSymbolsAndFollowSets.Keys);
+            var followCompatibleMatchingDiscriminators = matchingDiscriminators
+                // do not define a discriminator in terms of itself, as this would generate a parser that simply hangs.
+                // We should be safe from mutual recursion because for such cases we would have avoided creating the 
+                // mutually recursive symbol set altogether due to this check
+                .Where(s => s != rules[0].Produced)
+                // then check that each matched rule's follow set is a superset of what we computed is correct for this case
+                .Where(s => ruleSymbolsAndFollowSets.All(
+                    kvp => this._firstFollow.FollowOf(this._rulesByProduced[s].Single(r => r.Symbols.SequenceEqual(kvp.Key)))
+                        .IsSupersetOf(kvp.Value)
+                ))
+                .ToArray();
+            if (followCompatibleMatchingDiscriminators.Length > 0)
+            {
+                discriminator = followCompatibleMatchingDiscriminators[0];
+                discriminatorRules = this._rulesByProduced[discriminator].Where(r => ruleSymbolsAndFollowSets.ContainsKey(r.Symbols)).ToArray();
+            }
+            else
+            {
+                // construct a new discriminator symbol
+                discriminator = NonTerminal.CreateSynthetic(
+                    "T" + this._rulesByProduced.Keys.Count(k => k.SyntheticInfo is DiscriminatorSymbolInfo),
+                    new DiscriminatorSymbolInfo()
+                );
+                var rulesAndFollowSets = suffixToRuleMapping.ToDictionary(
+                    kvp => new Rule(discriminator, kvp.Key, kvp.Value.rule.Rule.ExtendedInfo),
+                    kvp => this._firstFollow.FollowOf(kvp.Value.rule.Rule)
+                );
+                discriminatorRules = rulesAndFollowSets.Keys;
+
+                this._rulesByProduced.Add(discriminator, rulesAndFollowSets.Keys.ToArray());
+                this._firstFollow.Add(rulesAndFollowSets);
+                this._generatorQueue.Enqueue(new NodeContext(rulesAndFollowSets.Keys.Select(r => r.Skip(0))));
+            }
 
             this._discriminatorContexts.Add(
                 discriminator,
                 new PostTokenSuffixDiscriminatorContext(
-                    rulesAndFollowSets.Keys.Select(r => new PostTokenSuffixDiscriminatorContext.RuleMapping(
+                    discriminatorRules.Select(r => new PostTokenSuffixDiscriminatorContext.RuleMapping(
                         discriminatorRule: r, 
                         mappedRule: suffixToRuleMapping[r.Symbols].rule,
                         expansionPaths: suffixToRuleMapping[r.Symbols].expansions
@@ -320,13 +348,12 @@ namespace Forelle.Parsing.Construction
             return new GrammarLookaheadNode(
                 token: lookaheadToken,
                 discriminatorParse: this.ReferenceNodeFor(discriminator),
-                mapping: rulesAndFollowSets.Keys
-                    .Select(r => (fromRule: r, toRule: suffixToRuleMapping[r.Symbols].rule))
+                mapping: discriminatorRules.Select(r => (fromRule: r, toRule: suffixToRuleMapping[r.Symbols].rule))
                     .ToDictionary(t => t.fromRule, t => (t.toRule.Rule, this.ReferenceNodeFor(t.toRule)))
             );
         }
 
-        private IReadOnlyDictionary<IReadOnlyList<Symbol>, (RuleRemainder rule, IReadOnlyList<IReadOnlyList<RuleRemainder>> expansions)> TryBuildSuffixToRuleMapping(
+        private Dictionary<IReadOnlyList<Symbol>, (RuleRemainder rule, IReadOnlyList<IReadOnlyList<RuleRemainder>> expansions)> TryBuildSuffixToRuleMapping(
             Token lookaheadToken, 
             IReadOnlyList<RuleRemainder> rules)
         {
