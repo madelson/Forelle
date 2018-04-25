@@ -195,10 +195,11 @@ namespace Forelle.Parsing.Construction
 
         private static readonly IComparer<DiscriminatorHelper.DiscriminatorPrefixSearchResult> PrefixSearchResultComparer =
             Comparers.Create((DiscriminatorHelper.DiscriminatorPrefixSearchResult r) => r.IsFollowCompatible)
+                // prefer prefixes which cover more total symbols
                 .ThenBy(Comparers.Create((DiscriminatorHelper.DiscriminatorPrefixSearchResult r) => r.RulesToDiscriminatorRuleMapping.Values.Sum(v => v.Symbols.Count)))
                 // finally, break ties by preferring root discriminators. This is useful because it keeps the follow set from growing more than
                 // is needed, thus minimizing potential issues. However, this may lead to more total child discriminators being produced
-                .ThenBy(Comparers.Create((DiscriminatorHelper.DiscriminatorPrefixSearchResult r) => ((DiscriminatorSymbolInfo)r.Discriminator.SyntheticInfo).ParentDiscriminator != null));
+                .ThenBy(Comparers.Create((DiscriminatorHelper.DiscriminatorPrefixSearchResult r) => ((DiscriminatorSymbolInfo)r.Discriminator.SyntheticInfo).ParentDiscriminator == null));
 
         private ParserNode TryCreateDiscriminatorPrefixParserNode(Token lookaheadToken, IReadOnlyList<RuleRemainder> rules)
         {
@@ -283,6 +284,14 @@ namespace Forelle.Parsing.Construction
         
         private ParserNode TryCreateDiscriminatorLookaheadParserNode(Token lookaheadToken, IReadOnlyList<RuleRemainder> rules)
         {
+            if (rules.Any(r => r.Symbols.Count > 500))
+            {
+                // TODO rather than simply hitting this and giving up, we should be able to handle such cases by considering the creation
+                // of new prefix discriminators (as opposed to hoping that they arise "naturally"). Depending on whether we can discriminate the suffix, 
+                // we may not even need these prefixes to be true discriminators as opposed to simply "recognizers" which can look past a prefix
+                throw new NotSupportedException("# of symbols indicates infinite recursion. See DiscriminatorExpansionEdgeCasesTest for example cases");
+            }
+
             // build a mapping of what we would see after passing by lookaheadToken to the rule that that suffix would indicate
             var suffixToRuleMapping = this.TryBuildSuffixToRuleMapping(lookaheadToken, rules);
             if (suffixToRuleMapping == null) { return null; }
