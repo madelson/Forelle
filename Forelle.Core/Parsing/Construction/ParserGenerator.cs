@@ -6,18 +6,27 @@ using System.Text;
 
 namespace Forelle.Parsing.Construction
 {
-    // idea: prefix only gets used for ambiguity resolution. Rather than cache by prefix and therefore repeat work,
-    // we could instead cache only by node. When we retrieve a node from the cache, we can note the prefix that goes with it.
-    // When we reach an ambiguity point, we can immediately create a stub node. Later, can we flow prefixes down to all stub nodes,
-    // and then replace the stub nodes with the appropriate ambiguity resolutions? Flowing down would be looking for all paths from
-    // the top level, starting with the top-level prefix and adding on implied prefixes as we go (e. g. a prefix-parse node adds an implied prefix)
-
-    // alternatively, can we just infer the prefix(es) from the set of rules we are choosing from? We can expand out partial rules, and inline
-    // discriminators. 
-
-    // In some cases we can even use the lookahead token to further expand backwards to give more context. E. g. for dangling else,
-    // we'll be choosing between "if E then E" and "if E then E else E". We realize that else is only in the follow of the first rule in the instance
-    // where there was a surrounding if, so the full context becomes if E then if E then E else E
+    // idea: we currently have 5 ways to parse:
+    // single rule parse
+    // token switch parse
+    // common prefix parse
+    // discriminator lookahead switch
+    // discriminator prefix switch
+    //
+    // To deal with cases like in DiscriminatorExpansionEdgeCasesTest, we might need
+    // to introduce a new approach: custom discriminator prefixes that might not be differentiable (similar to common prefixes)
+    //
+    // To deal with ambiguities, we might need to refine some options, such as preventing node sharing
+    //
+    // Left recursion is currently handled via up-front transforms, but it COULD potentially be handled as a custom node type, maybe even
+    // incorporating Pratt precedence parsing. This would be very in-line with the philosophy of imitating hand-made parsers
+    //
+    // Taking this into account, we could rethink our structure to late-bind node links even more. Starting with each start node context,
+    // we can build out nodes which point to node contexts rather than nodes. The advantage of this is that it makes it easier to be more stateless
+    // and thus it makes it possible to speculate (e. g. trying several strategies for parsing and picking the one that ends up being simplest).
+    // 
+    // Once we exhaust node contexts that still require parsing, we can go through and link everything up, possibly even doing further deduplication 
+    // and other optimization that point
 
     /// <summary>
     /// Implements the core Forelle parser generation algorithm
