@@ -289,13 +289,7 @@ namespace Forelle.Parsing.Construction
             );
         }
 
-        private static PotentialParseParentNode DefaultParseOf(Rule rule)
-        {
-            return new PotentialParseParentNode(
-                rule,
-                rule.Symbols.Select(s => new PotentialParseLeafNode(s))
-            );
-        }
+        private static PotentialParseParentNode DefaultParseOf(Rule rule) => (PotentialParseParentNode)PotentialParseNode.Create(rule);
 
         private static List<ImmutableLinkedList<T>> CrossJoin<T>(IEnumerable<IReadOnlyCollection<T>> values)
         {
