@@ -118,10 +118,10 @@ namespace Forelle.Parsing.Construction
                 }
                 else
                 {
-                    var (rule, error) = ambiguityResolver.Value.ResolveAmbiguity(referenceContext.NodeContext.Rules, referenceContext.NodeContext.Lookahead);
-                    if (error != null)
+                    var (rule, errors) = ambiguityResolver.Value.ResolveAmbiguity(referenceContext.NodeContext.Rules, referenceContext.NodeContext.Lookahead);
+                    if (errors.Any())
                     {
-                        this._errors.Add(error);
+                        this._errors.AddRange(errors);
                     }
 
                     reference.SetValue(this.ReferenceNodeFor(rule));

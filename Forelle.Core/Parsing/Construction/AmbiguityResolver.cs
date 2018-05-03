@@ -35,47 +35,62 @@ namespace Forelle.Parsing.Construction
             this._unifier = new AmbiguityContextUnifier(rulesByProduced);
         }
 
-        public (RuleRemainder Rule, string Error) ResolveAmbiguity(IReadOnlyList<RuleRemainder> rules, Token lookaheadToken)
+        public (RuleRemainder Rule, string[] Errors) ResolveAmbiguity(IReadOnlyList<RuleRemainder> rules, Token lookaheadToken)
         {
             var contexts = this._contextualizer.GetExpandedAmbiguityContexts(rules, lookaheadToken);
 
             var unifiedContexts = contexts.Select(c =>
                 {
                     var contextArray = c.ToArray();
-                    Invariant.Require(this._unifier.TryUnify(contextArray.Select(kvp => kvp.Value).ToArray(), out var unified));
-                    return contextArray.Select((kvp, i) => (rule: kvp.Key, node: unified[i]))
-                        .ToDictionary(t => t.rule, t => t.node);
+                    return this._unifier.TryUnify(contextArray.Select(kvp => kvp.Value).ToArray(), out var unified)
+                        ? (
+                            context: contextArray.Select((kvp, i) => (rule: kvp.Key, node: unified[i]))
+                                .ToDictionary(t => t.rule, t => t.node),
+                            unified: true
+                        )
+                        : (context: c, unified: false);
                 })
                 .ToArray();
 
-            var contextsToResolutions = unifiedContexts.ToDictionary(c => c, c => this._ambiguityResolutions.TryGetValue(c.Values, out var resolution) ? resolution : null);
+            var contextsWithResolutions = unifiedContexts
+                .Select(c => (c.context, c.unified, resolution: this._ambiguityResolutions.TryGetValue(c.context.Values, out var resolution) ? resolution : null))
+                .ToArray();
 
-            if (contextsToResolutions.Values.Contains(null))
+            if (contextsWithResolutions.Any(c => c.resolution == null))
             {
                 return (
                     Rule: rules[0],
-                    Error: string.Join(
-                        Environment.NewLine + Environment.NewLine,
-                        contextsToResolutions.Where(kvp => kvp.Value == null)
-                            // todo cleanup
-                            .Select(kvp => $"Unable to distinguish between the following parse trees for the sequence of symbols [{string.Join(" ", kvp.Key.Values.First().Leaves)}]:{Environment.NewLine}{string.Join(Environment.NewLine, kvp.Key.Values.Select(n => $"\t{n}").OrderBy(s => s))}")
-                    )
+                    Errors: contextsWithResolutions.Select(c => ToAmbiguityError(c.context, c.unified)).ToArray()
                 );
             }
 
-            // todo would be nice to use named tuples instead of dictionary
-            var preferredRules = contextsToResolutions.Select(kvp => kvp.Key.Single(e => PotentialParseNode.Comparer.Equals(e.Value, kvp.Value.PreferredParse)).Key)
+            var preferredRules = contextsWithResolutions.Select(c => c.context.Single(kvp => PotentialParseNode.Comparer.Equals(kvp.Value, c.resolution.PreferredParse)).Key)
                 .ToArray();
 
             if (preferredRules.Distinct().Count() != 1)
             {
                 return (
                     Rule: rules[0],
-                    Error: "conflicting ambiguity resolutions TODO cleanup"
+                    Errors: new[] { "conflicting ambiguity resolutions TODO cleanup" }
                 );
             }
 
-            return (Rule: preferredRules[0], Error: null);
+            return (Rule: preferredRules[0], Errors: Array.Empty<string>());
+        }
+
+        private static string ToAmbiguityError(IReadOnlyDictionary<RuleRemainder, PotentialParseNode> context, bool unified)
+        {
+            var builder = new StringBuilder("Unable to distinguish between the following parse trees");
+            if (unified)
+            {
+                builder.Append(" for the sequence of symbols [")
+                    .Append(string.Join(" ", context.Values.First().Leaves))
+                    .Append(']');
+            }
+            builder.AppendLine(":")
+                .AppendLine(string.Join(Environment.NewLine, context.Values.Select(n => $"\t{(unified ? n.ToString() : n.ToMarkedString().Replace(Environment.NewLine, Environment.NewLine + "\t"))}").OrderBy(s => s)));
+
+            return builder.ToString();
         }
     }
 }

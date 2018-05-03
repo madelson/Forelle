@@ -54,7 +54,8 @@ namespace Forelle.Tests.Parsing.Construction
             };
 
             var (parser, errors) = ParserGeneratorTest.CreateParser(rules);
-            errors.Count.ShouldEqual(2);
+            Console.WriteLine(string.Join(Environment.NewLine, errors));
+            errors.Count.ShouldEqual(3);
         }
 
         /// <summary>
@@ -151,6 +152,32 @@ namespace Forelle.Tests.Parsing.Construction
             // todo would be nice to express resolutions as strings in tests...
 
             // todo idea: rather than doing lookback to fix, what if we went back and forced a discriminator rather than a prefix for E -> T - E vs. E -> T?
+        }
+
+        /// <summary>
+        /// This test demonstrates handling of an unambiguous grammar which we can't handle. Because
+        /// it's in that class, we're unable to unify the ambiguity contexts we find because there isn't
+        /// actually an ambiguity. Therefore all we can do is print out our current state with markers to
+        /// show where the parser is when trying to make it's decision
+        /// </summary>
+        [Test]
+        public void TestPalindromePseudoAmbiguity()
+        {
+            var rules = new Rules
+            {
+                { A },
+                { A, Plus, A, Plus }
+            };
+
+            var (parser, errors) = ParserGeneratorTest.CreateParser(rules);
+            errors.Count.ShouldEqual(1);
+            errors[0].ShouldEqualIgnoreIndentation(
+                @"Unable to distinguish between the following parse trees:
+	                A(+ A +)
+	                ..^.....
+	                A(+ A() +)
+	                ........^."
+            );
         }
     }
 }
