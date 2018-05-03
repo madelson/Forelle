@@ -11,6 +11,7 @@ namespace Forelle.Parsing.Construction
     {
         private readonly IReadOnlyDictionary<IReadOnlyCollection<PotentialParseNode>, AmbiguityResolution> _ambiguityResolutions;
         private readonly AmbiguityContextualizer _contextualizer;
+        private readonly AmbiguityContextUnifier _unifier;
         
         public AmbiguityResolver(
             IReadOnlyDictionary<NonTerminal, IReadOnlyList<Rule>> rulesByProduced,
@@ -31,13 +32,23 @@ namespace Forelle.Parsing.Construction
                 firstFollowProvider,
                 discriminatorContexts
             );
+            this._unifier = new AmbiguityContextUnifier(rulesByProduced);
         }
 
         public (RuleRemainder Rule, string Error) ResolveAmbiguity(IReadOnlyList<RuleRemainder> rules, Token lookaheadToken)
         {
             var contexts = this._contextualizer.GetExpandedAmbiguityContexts(rules, lookaheadToken);
 
-            var contextsToResolutions = contexts.ToDictionary(c => c, c => this._ambiguityResolutions.TryGetValue(c.Values, out var resolution) ? resolution : null);
+            var unifiedContexts = contexts.Select(c =>
+                {
+                    var contextArray = c.ToArray();
+                    Invariant.Require(this._unifier.TryUnify(contextArray.Select(kvp => kvp.Value).ToArray(), out var unified));
+                    return contextArray.Select((kvp, i) => (rule: kvp.Key, node: unified[i]))
+                        .ToDictionary(t => t.rule, t => t.node);
+                })
+                .ToArray();
+
+            var contextsToResolutions = unifiedContexts.ToDictionary(c => c, c => this._ambiguityResolutions.TryGetValue(c.Values, out var resolution) ? resolution : null);
 
             if (contextsToResolutions.Values.Contains(null))
             {
@@ -46,8 +57,8 @@ namespace Forelle.Parsing.Construction
                     Error: string.Join(
                         Environment.NewLine + Environment.NewLine,
                         contextsToResolutions.Where(kvp => kvp.Value == null)
-                        // todo cleanup
-                            .Select(kvp => $"Unable to distinguish between the following parse trees for the sequence of symbols [{string.Join(" ", kvp.Key.Values.First().Leaves)}]:{Environment.NewLine}{string.Join(Environment.NewLine, kvp.Key.Values.Select(n => $"\t{n}"))}")
+                            // todo cleanup
+                            .Select(kvp => $"Unable to distinguish between the following parse trees for the sequence of symbols [{string.Join(" ", kvp.Key.Values.First().Leaves)}]:{Environment.NewLine}{string.Join(Environment.NewLine, kvp.Key.Values.Select(n => $"\t{n}").OrderBy(s => s))}")
                     )
                 );
             }

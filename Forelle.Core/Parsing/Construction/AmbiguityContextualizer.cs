@@ -7,6 +7,9 @@ using System.Text;
 
 namespace Forelle.Parsing.Construction
 {
+    // todo remove unify
+    // todo fix cursor logic
+
     internal class AmbiguityContextualizer
     {
         private readonly IReadOnlyDictionary<NonTerminal, IReadOnlyList<Rule>> _rulesByProduced;
@@ -48,6 +51,14 @@ namespace Forelle.Parsing.Construction
                 r => r,
                 r => this.ExpandContexts(DefaultParseOf(r.Rule), lookaheadToken, r.Start).ToArray()
             );
+            Invariant.Require(results.SelectMany(kvp => kvp.Value).All(n => n.CursorPosition.HasValue && !n.HasTrailingCursor()), "all expansions should contain the lookahead token");
+
+            var crossJoinedContexts = CrossJoin(
+                    results.Select(kvp => kvp.Value.Select(node => (rule: kvp.Key, node)).ToArray())
+                )
+                .Select(c => c.ToDictionary(t => t.rule, t => t.node))
+                .ToArray();
+            return crossJoinedContexts;
 
             // todo remove limitations
             Invariant.Require(rules.Count == 2);
@@ -222,7 +233,7 @@ namespace Forelle.Parsing.Construction
             // only potential parse sequence is the current sequence.
             // Otherwise there are no valid sequences
             return node.Symbol == lookaheadToken
-                ? new[] { node }
+                ? new[] { new PotentialParseLeafNode(node.Symbol, cursorPosition: 0) }
                 : Array.Empty<PotentialParseNode>();
         }
 
@@ -255,13 +266,15 @@ namespace Forelle.Parsing.Construction
                 node.Children.Select((ch, pos) => pos < position ? ch : this.EmptyParseOf(ch))
             );
 
+            // todo I'm concerned that these restrictions might make us miss lookback patterns. Basically they
+            // would add some # of repeated null symbols between the current symbol and the lookahead token
             var expanded = this._nonDiscriminatorSymbolReferences.Value[node.Rule.Produced]
-                // don't expand the same reference twice
+                // don't expand the same reference twice (todo do we need this or does the condition below handle all relevant cases?)
                 .Where(reference => !alreadyExpanded.Contains(reference.rule))
-                // don't expand a reference is it (a) does not change the produced symbol and (b) 
-                // cannot have the lookahead token appear after the reference index. The reason is that this
-                // expansion won't get us anywhere new; we'll end up right back at this line with the same produced
-                // symbol
+                // expand a reference if it (a) changes the produced symbol or (b) 
+                // can have the lookahead token appear after the reference index. Expansions failing both of these criteria
+                // fail to make "progress"; we just end up right back at this line in the same state. Because of this, such
+                // expansions are making the context pattern less general but not more descriptive
                 .Where(
                     reference => reference.rule.Produced != node.Rule.Produced 
                     || this._firstFollowProvider.FirstOf(reference.rule.Skip(reference.index + 1).Symbols).Contains(lookaheadToken)
@@ -326,7 +339,7 @@ namespace Forelle.Parsing.Construction
                         unifiedB = currentState.PathB.Last().node;
                         // it's possible to find equivalent expansions. However, this can't
                         // be the ambiguous case so just ignore it
-                        if (!AreEquivalent(unifiedA, unifiedB))
+                        if (!PotentialParseNode.Comparer.Equals(unifiedA, unifiedB))
                         {
                             return true;
                         }
@@ -353,7 +366,7 @@ namespace Forelle.Parsing.Construction
                                         pathB: expandingA ? currentState.PathB : expandedPath,
                                         expansionCount: currentState.ExpansionCount + 1,
                                         progressCount: currentState.ProgressCount,
-                                        // we are replacing a leaf with N leaves, so the leave increase is N - 1.
+                                        // we are replacing a leaf with N leaves, so the leaf increase is N - 1.
                                         // Since N can be 0, this can yield a net decrease
                                         leafNodeCount: currentState.LeafNodeCount + (rule.Symbols.Count - 1),
                                         canHaveRootExpansions: false
@@ -397,31 +410,6 @@ namespace Forelle.Parsing.Construction
 
             unifiedA = unifiedB = null;
             return false;
-        }
-
-        private static bool AreEquivalent(PotentialParseNode a, PotentialParseNode b)
-        {
-            if (a.Symbol != b.Symbol) { return false; }
-
-            if (a is PotentialParseParentNode parentA)
-            {
-                if (b is PotentialParseParentNode parentB)
-                {
-                    if (parentA.Rule != parentB.Rule) { return false; }
-
-                    for (var i = 0; i < parentA.Children.Count; ++i)
-                    {
-                        if (!AreEquivalent(parentA.Children[i], parentB.Children[i])) { return false; }
-                    }
-
-                    return true;
-                }
-
-                return false; // b is a leaf
-            }
-
-            // if we get here, a is a leaf whose symbol matches b. If b is also a leaf then they match!
-            return b is PotentialParseLeafNode;
         }
         
         private sealed class UnifyState : IComparable<UnifyState>
@@ -608,6 +596,32 @@ namespace Forelle.Parsing.Construction
                 rule,
                 rule.Symbols.Select(s => new PotentialParseLeafNode(s))
             );
+        }
+
+        private static List<ImmutableLinkedList<T>> CrossJoin<T>(IEnumerable<IReadOnlyCollection<T>> values)
+        {
+            var result = new List<ImmutableLinkedList<T>>();
+            GatherJoinedLists(ImmutableLinkedList<T>.Empty, values.ToImmutableLinkedList());
+            return result;
+
+            void GatherJoinedLists(ImmutableLinkedList<T> prefix, ImmutableLinkedList<IReadOnlyCollection<T>> suffixSources)
+            {
+                if (suffixSources.TryDeconstruct(out var head, out var tail))
+                {
+                    foreach (var item in head)
+                    {
+                        var prefixWithItem = prefix.Prepend(item);
+                        if (tail.Count > 0)
+                        {
+                            GatherJoinedLists(prefix.Prepend(item), tail);
+                        }
+                        else
+                        {
+                            result.Add(prefixWithItem);
+                        }
+                    }
+                }
+            }
         }
     }
 }

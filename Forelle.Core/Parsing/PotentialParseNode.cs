@@ -17,6 +17,7 @@ namespace Forelle.Parsing
         }
 
         public Symbol Symbol { get; }
+        internal abstract int? CursorPosition { get; }
 
         private IReadOnlyList<PotentialParseLeafNode> _cachedLeaves;
         internal IReadOnlyList<PotentialParseLeafNode> Leaves => this._cachedLeaves ?? (this._cachedLeaves = this.GetLeaves());
@@ -81,7 +82,6 @@ namespace Forelle.Parsing
                     }
                 }
 
-
                 return true;
             }
 
@@ -103,11 +103,15 @@ namespace Forelle.Parsing
 
     internal sealed class PotentialParseLeafNode : PotentialParseNode
     {
-        public PotentialParseLeafNode(Symbol symbol)
+        public PotentialParseLeafNode(Symbol symbol, int? cursorPosition = null)
             : base(symbol)
         {
+            Invariant.Require(!cursorPosition.HasValue || cursorPosition == 0 || cursorPosition == 1);
+            this.CursorPosition = cursorPosition;
         }
-        
+
+        internal override int? CursorPosition { get; }
+
         public override string ToString() => ToString(this.Symbol);
         
         private protected override IReadOnlyList<PotentialParseLeafNode> GetLeaves() => new[] { this };
@@ -125,18 +129,40 @@ namespace Forelle.Parsing
             {
                 throw new ArgumentException($"Child count must match {nameof(rule)} symbol count", nameof(children));
             }
+
             for (var i = 0; i < this.Children.Count; ++i)
             {
-                if (this.Children[i].Symbol != this.Rule.Symbols[i])
+                var child = this.Children[i];
+                if (child.Symbol != this.Rule.Symbols[i])
                 {
-                    throw new ArgumentException($"Incorrect symbol type for {nameof(children)}[{i}]. Expected '{this.Rule.Symbols[i]}', but found '{this.Children[i].Symbol}'.", nameof(children));
+                    throw new ArgumentException($"Incorrect symbol type for {nameof(children)}[{i}]. Expected '{this.Rule.Symbols[i]}', but found '{child.Symbol}'.", nameof(children));
                 }
+ 
+                if (i == this.CursorPosition)
+                {
+                    Invariant.Require(child.CursorPosition.HasValue && !child.HasTrailingCursor());
+                }
+                else if (child.CursorPosition.HasValue)
+                {
+                    Invariant.Require(!this.CursorPosition.HasValue);
+                    this.CursorPosition = child.HasTrailingCursor() ? i + 1 : i;
+                }
+            }
+        }
+
+        public PotentialParseParentNode(Rule rule, bool hasTrailingCursor)
+            : this(rule, Enumerable.Empty<PotentialParseNode>())
+        {
+            if (hasTrailingCursor)
+            {
+                this.CursorPosition = 0;
             }
         }
 
         public Rule Rule { get; }
         public new NonTerminal Symbol => this.Rule.Produced;
         public IReadOnlyList<PotentialParseNode> Children { get; }
+        internal override int? CursorPosition { get; }
 
         public override string ToString() => $"{ToString(this.Symbol)}({string.Join(" ", this.Children)})";
 

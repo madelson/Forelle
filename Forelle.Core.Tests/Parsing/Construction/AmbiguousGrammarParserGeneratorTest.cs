@@ -80,7 +80,12 @@ namespace Forelle.Tests.Parsing.Construction
 
             var (parser, errors) = ParserGeneratorTest.CreateParser(rules);
             errors.Count.ShouldEqual(1);
-            Assert.That(errors[0], Does.Contain("Full context: '( ID ) Term - Exp'"));
+            errors[0].ShouldEqualIgnoreIndentation(
+@"Unable to distinguish between the following parse trees for the sequence of symbols [""("" ID "")"" - Term]:
+    Exp(Term(""("" Exp(Term(ID)) "")"") - Exp(Term))
+    Term(""("" ID "")"" Term(- Term))");
+
+            throw new NotImplementedException();
         }
 
         [Test]
@@ -89,8 +94,6 @@ namespace Forelle.Tests.Parsing.Construction
             var cast = new NonTerminal("Cast");
             var term = new NonTerminal("Term");
             
-            // todo this is the wrong ambiguity. There is no unary minus so
-            // we aren't confused about cast of negative vs. subtract. Instead,
             // we're confused by cast of subtract vs subtract of cast:
             // (x)y-z could be:
             // cast(x, y-z)
@@ -112,8 +115,8 @@ namespace Forelle.Tests.Parsing.Construction
             errors.Count.ShouldEqual(1);
             errors[0].ShouldEqualIgnoreIndentation(
 @"Unable to distinguish between the following parse trees for the sequence of symbols [""("" ID "")"" Term - Exp]:
-    Exp(Term(Cast(""("" ID "")"" Exp(Term))) - Exp)
-	Cast(""("" ID "")"" Exp(Term - Exp))"
+    Cast(""("" ID "")"" Exp(Term - Exp))
+    Exp(Term(Cast(""("" ID "")"" Exp(Term))) - Exp)"
             );
 
             // make cast bind tighter
