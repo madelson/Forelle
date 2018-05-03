@@ -20,11 +20,15 @@ namespace Forelle.Parsing.Construction
     internal class AmbiguityContextUnifier
     {
         private readonly IReadOnlyDictionary<NonTerminal, IReadOnlyList<Rule>> _rulesByProduced;
+        private readonly IFirstFollowProvider _firstFollowProvider;
         private readonly ILookup<Symbol, (Rule rule, int index)> _nonDiscriminatorSymbolReferences;
 
-        public AmbiguityContextUnifier(IReadOnlyDictionary<NonTerminal, IReadOnlyList<Rule>> rulesByProduced)
+        public AmbiguityContextUnifier(
+            IReadOnlyDictionary<NonTerminal, IReadOnlyList<Rule>> rulesByProduced,
+            IFirstFollowProvider firstFollowProvider)
         {
             this._rulesByProduced = rulesByProduced;
+            this._firstFollowProvider = firstFollowProvider;
             // TODO rationalize with similar build of this in AmbContextualizer
             this._nonDiscriminatorSymbolReferences = this._rulesByProduced.Where(kvp => !(kvp.Key.SyntheticInfo is DiscriminatorSymbolInfo))
                 .SelectMany(kvp => kvp.Value)
@@ -38,6 +42,29 @@ namespace Forelle.Parsing.Construction
         private const int MaxExpansionCount = 20;
 
         public bool TryUnify(IReadOnlyList<PotentialParseNode> nodes, out PotentialParseNode[] unified)
+        {
+            if (this.TryUnifyLeaves(nodes, out var unifiedAtLeaves))
+            {
+                if (this.TryUnifyRoots(unifiedAtLeaves, out var unifiedAtRoots))
+                {
+                    unified = unifiedAtRoots;
+                    return true;
+                }
+
+                // even if we can't get root unification, leaf unification is still really helpful
+                unified = unifiedAtLeaves;
+                return true;
+            }
+
+            unified = null;
+            return false;
+        }
+
+        /// <summary>
+        /// The core unification algorithm. Attempts to alter <paramref name="nodes"/> such that each has the
+        /// same sequence of <see cref="PotentialParseNode.Leaves"/>
+        /// </summary>
+        private bool TryUnifyLeaves(IReadOnlyList<PotentialParseNode> nodes, out PotentialParseNode[] unified)
         {
             Invariant.Require(nodes.Count > 1);
 
@@ -222,6 +249,97 @@ namespace Forelle.Parsing.Construction
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// Once we've unified all leaves, we can further clarify the situation by unifying the output so that
+        /// the root node of each path is the same symbol. This makes it obvious what the parser was looking at when
+        /// it encountered ambiguity
+        /// </summary>
+        private bool TryUnifyRoots(IReadOnlyList<PotentialParseNode> unifiedAtLeaves, out PotentialParseNode[] unifiedAtRoots)
+        {
+            // short-circuit if roots are already unified
+            if (unifiedAtLeaves.Select(n => n.Symbol).Distinct().Count() == 1)
+            {
+                unifiedAtRoots = unifiedAtLeaves.ToArray();
+                return true;
+            }
+
+            var expansions = unifiedAtLeaves.Select(
+                    n => this.GetUniqueRootExpansionsAddingNoLeaves(n)
+                        .GroupBy(e => e.Symbol)
+                        // avoid considering symbols which can be reached via multiple expansion paths
+                        // since there's no way to choose the "right" path
+                        .Where(g => g.Count() == 1)
+                        .ToDictionary(g => g.Key, g => g.Single())
+                )
+                .ToArray();
+
+            // find all symbols which all nodes have an expansion for
+            var unifyingRootSymbols = expansions[0].Keys
+                .Where(s => expansions.Skip(1).All(e => e.ContainsKey(s)))
+                .ToArray();
+            if (unifyingRootSymbols.Length == 0)
+            {
+                unifiedAtRoots = null;
+                return false;
+            }
+
+            // we could pick any unifying root symbol, but the one with the fewest total nodes 
+            // should be the simplest to look at and ensures consistency
+            var bestUnifyingRootSymbol = unifyingRootSymbols.OrderBy(s => expansions.Sum(e => CountNodes(e[s])))
+                // break ties using name for consistency
+                .ThenBy(s => s.Name)
+                .First();
+
+            unifiedAtRoots = expansions.Select(e => e[bestUnifyingRootSymbol]).ToArray();
+            return true;
+        }
+
+        private List<PotentialParseNode> GetUniqueRootExpansionsAddingNoLeaves(PotentialParseNode startingNode)
+        {
+            var results = new List<PotentialParseNode>();
+            GatherExpansions(startingNode, ImmutableHashSet<NonTerminal>.Empty);
+            return results;
+
+            void GatherExpansions(PotentialParseNode node, ImmutableHashSet<NonTerminal> usedSymbols)
+            {
+                results.Add(node);
+
+                var references = this._nonDiscriminatorSymbolReferences[node.Symbol]
+                    // avoid infinite recursion
+                    .Where(r => !usedSymbols.Contains(r.rule.Produced))
+                    // must add no leaf symbols, so all symbols other than where we'll be plugging in node must be nullable
+                    .Where(r => !r.rule.Symbols.Where((s, i) => i != r.index && !this._firstFollowProvider.IsNullable(s)).Any())
+                    .GroupBy(r => r.rule.Produced)
+                    // there must be only one reference producing the current symbol, since otherwise we don't know which to pick
+                    // and picking just one would be wrong (this is the "Unique") part of the method name
+                    .Where(g => g.Count() == 1)
+                    .Select(g => g.Single());
+                foreach (var reference in references)
+                {
+                    var newNode = new PotentialParseParentNode(
+                        reference.rule,
+                        reference.rule.Symbols.Select((s, i) => i == reference.index ? node : this.EmptyParseOf((NonTerminal)s))
+                    );
+                    GatherExpansions(newNode, usedSymbols.Add(newNode.Symbol));
+                }
+            }
+        }
+
+        private PotentialParseParentNode EmptyParseOf(NonTerminal produced)
+        {
+            return new PotentialParseParentNode(
+                this._rulesByProduced[produced].Single(r => r.Symbols.Count == 0),
+                Enumerable.Empty<PotentialParseNode>()
+            );
+        }
+
+        private static int CountNodes(PotentialParseNode node)
+        {
+            return node is PotentialParseParentNode parent ? 1 + parent.Children.Sum(CountNodes)
+                : node is PotentialParseLeafNode leaf ? 1
+                : throw new ArgumentException("Unexpected node type");
         }
 
         #region ---- States ----

@@ -84,7 +84,7 @@ namespace Forelle.Tests.Parsing.Construction
             errors[0].ShouldEqualIgnoreIndentation(
 @"Unable to distinguish between the following parse trees for the sequence of symbols [""("" ID "")"" - Term]:
     Exp(Term(""("" Exp(Term(ID)) "")"") - Exp(Term))
-    Term(""("" ID "")"" Term(- Term))");
+    Exp(Term(""("" ID "")"" Term(- Term)))");
 
             throw new NotImplementedException();
         }
@@ -116,7 +116,7 @@ namespace Forelle.Tests.Parsing.Construction
             errors.Count.ShouldEqual(1);
             errors[0].ShouldEqualIgnoreIndentation(
 @"Unable to distinguish between the following parse trees for the sequence of symbols [""("" ID "")"" Term - Exp]:
-    Cast(""("" ID "")"" Exp(Term - Exp))
+    Exp(Term(Cast(""("" ID "")"" Exp(Term - Exp))))
     Exp(Term(Cast(""("" ID "")"" Exp(Term))) - Exp)"
             );
 

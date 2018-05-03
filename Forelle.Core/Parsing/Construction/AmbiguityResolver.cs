@@ -32,7 +32,7 @@ namespace Forelle.Parsing.Construction
                 firstFollowProvider,
                 discriminatorContexts
             );
-            this._unifier = new AmbiguityContextUnifier(rulesByProduced);
+            this._unifier = new AmbiguityContextUnifier(rulesByProduced, firstFollowProvider);
         }
 
         public (RuleRemainder Rule, string[] Errors) ResolveAmbiguity(IReadOnlyList<RuleRemainder> rules, Token lookaheadToken)
