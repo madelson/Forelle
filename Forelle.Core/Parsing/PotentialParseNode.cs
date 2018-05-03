@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 
@@ -27,11 +28,38 @@ namespace Forelle.Parsing
 
         private int _cachedValueHashCode;
 
+        public sealed override string ToString()
+        {
+            var builder = new StringBuilder();
+            this.ToString(builder, renderCursorOnly: false);
+            return builder.ToString();
+        }
+
+        internal string ToMarkedString()
+        {
+            var builder = new StringBuilder();
+            this.ToString(builder, renderCursorOnly: false);
+            if (this.CursorPosition.HasValue)
+            {
+                builder.AppendLine();
+                this.ToString(builder, renderCursorOnly: true);
+                if (this.HasTrailingCursor())
+                {
+                    builder.Append(CursorMark);
+                }
+            }
+
+            return builder.ToString();
+        }
+
+        internal abstract void ToString(StringBuilder builder, bool renderCursorOnly);
+
         public static PotentialParseNode Create(Symbol symbol) => new PotentialParseLeafNode(symbol);
         public static PotentialParseNode Create(Rule rule) => Create(rule, rule?.Symbols.Select(Create));
         public static PotentialParseNode Create(Rule rule, IEnumerable<PotentialParseNode> children) => new PotentialParseParentNode(rule, children);
         public static PotentialParseNode Create(Rule rule, params SymbolRuleOrNode[] children) => Create(rule, children?.Select(n => n.Node));
 
+        private protected const char CursorMark = '^', CursorSpacer = '.';
         private protected static string ToString(Symbol symbol) => symbol.Name.Any(char.IsWhiteSpace)
             || symbol.Name.IndexOf('(') >= 0
             || symbol.Name.IndexOf(')') >= 0
@@ -112,7 +140,26 @@ namespace Forelle.Parsing
 
         internal override int? CursorPosition { get; }
 
-        public override string ToString() => ToString(this.Symbol);
+        internal override void ToString(StringBuilder builder, bool renderCursorOnly)
+        {
+            var symbolString = ToString(this.Symbol);
+            if (renderCursorOnly)
+            {
+                if (this.CursorPosition == 0)
+                {
+                    builder.Append(CursorMark)
+                        .Append(CursorSpacer, repeatCount: symbolString.Length - 1);
+                }
+                else
+                {
+                    builder.Append(CursorSpacer, repeatCount: symbolString.Length);
+                }
+            }
+            else
+            {
+                builder.Append(symbolString);
+            }
+        }
         
         private protected override IReadOnlyList<PotentialParseLeafNode> GetLeaves() => new[] { this };
         private protected override int GetValueHashCode() => this.Symbol.GetHashCode();
@@ -164,7 +211,26 @@ namespace Forelle.Parsing
         public IReadOnlyList<PotentialParseNode> Children { get; }
         internal override int? CursorPosition { get; }
 
-        public override string ToString() => $"{ToString(this.Symbol)}({string.Join(" ", this.Children)})";
+        internal override void ToString(StringBuilder builder, bool renderCursorOnly)
+        {
+            var producedSymbolString = ToString(this.Symbol);
+            if (renderCursorOnly)
+            {
+                builder.Append(CursorSpacer, repeatCount: producedSymbolString.Length + 1);
+            }
+            else
+            {
+                builder.Append(producedSymbolString).Append('(');
+            }
+
+            for (var i = 0; i < this.Children.Count; ++i)
+            {
+                if (i > 0) { builder.Append(renderCursorOnly ? CursorSpacer : ' '); }
+                this.Children[i].ToString(builder, renderCursorOnly);
+            }
+
+            builder.Append(renderCursorOnly ? CursorSpacer : ')');
+        }
 
         private protected override IReadOnlyList<PotentialParseLeafNode> GetLeaves()
         {
