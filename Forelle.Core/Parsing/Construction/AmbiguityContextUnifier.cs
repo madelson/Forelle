@@ -9,8 +9,6 @@ using ParseTreePath = Medallion.Collections.ImmutableLinkedList<(Forelle.Parsing
 
 namespace Forelle.Parsing.Construction
 {
-    // todo can avoid duplicate work here by not expanding index 1, then 2 and also 2, then 1
-
     /// <summary>
     /// The <see cref="AmbiguityContextUnifier"/>'s job is to take two or more <see cref="PotentialParseNode"/>s representing
     /// ambiguous points in a grammar and attempt to "unify" them. That means performing grammatically-valid transformations on
@@ -49,11 +47,12 @@ namespace Forelle.Parsing.Construction
                     .Select(p => new PathUnifyState(
                         p,
                         expansionCount: 0,
+                        hasLeafExpansions: false,
                         leafNodeCount: RootOf(p).Leaves.Count
                     ))
                     .ToImmutableArray(),
                 progressCount: 0,
-                canHaveRootExpansions: true
+                maxPathIndexExpandedAtCurrentProgress: -1
             ));
 
             while (priorityQueue.Count > 0)
@@ -69,8 +68,8 @@ namespace Forelle.Parsing.Construction
 
                 if (currentState.TotalExpansionCount < MaxExpansionCount)
                 {
-                    this.ExpandInner(currentState, priorityQueue);
-                    this.ExpandOuter(currentState, priorityQueue);
+                    this.ExpandLeaves(currentState, priorityQueue);
+                    this.ExpandRoots(currentState, priorityQueue);
                 }
             }
 
@@ -121,12 +120,13 @@ namespace Forelle.Parsing.Construction
                     currentPaths.Select((oldState, i) => new PathUnifyState(
                             path: advancedPaths[i],
                             expansionCount: oldState.ExpansionCount,
+                            hasLeafExpansions: oldState.HasLeafExpansions,
                             leafNodeCount: oldState.LeafNodeCount
                         ))
                         .ToImmutableArray(),
                     progressCount: currentState.ProgressCount + 1,
-                    // disallow root expansions once we've made progress
-                    canHaveRootExpansions: false
+                    // since progress has changed, this resets
+                    maxPathIndexExpandedAtCurrentProgress: -1
                 ));
                 return false; // didn't finish
             }
@@ -144,9 +144,9 @@ namespace Forelle.Parsing.Construction
         /// For each path in the <paramref name="currentState"/> that ends in a <see cref="NonTerminal"/>,
         /// expands the path using all <see cref="Rule"/>s for that <see cref="Symbol"/>
         /// </summary>
-        private void ExpandInner(UnifyState currentState, PriorityQueue<UnifyState> priorityQueue)
+        private void ExpandLeaves(UnifyState currentState, PriorityQueue<UnifyState> priorityQueue)
         {
-            for (var i = 0; i < currentState.Paths.Length; ++i)
+            for (var i = Math.Max(currentState.MaxPathIndexExpandedAtCurrentProgress, 0); i < currentState.Paths.Length; ++i)
             {
                 var pathState = currentState.Paths[i];
                 if (pathState.Path.Head.node.Symbol is NonTerminal nonTerminal)
@@ -161,6 +161,7 @@ namespace Forelle.Parsing.Construction
                             var newPathState = new PathUnifyState(
                                 expandedPath,
                                 pathState.ExpansionCount + 1,
+                                hasLeafExpansions: true,
                                 // we are replacing a leaf with N leaves, so the leaf increase is N - 1.
                                 // Since N can be 0, this can yield a net decrease
                                 leafNodeCount: pathState.LeafNodeCount + (rule.Symbols.Count - 1)
@@ -169,8 +170,7 @@ namespace Forelle.Parsing.Construction
                             priorityQueue.Enqueue(new UnifyState(
                                 currentState.Paths.SetItem(i, newPathState),
                                 progressCount: currentState.ProgressCount,
-                                // disallow root expansions once we've made an internal expansion
-                                canHaveRootExpansions: false
+                                maxPathIndexExpandedAtCurrentProgress: i
                             ));
                         }
                     }
@@ -182,29 +182,44 @@ namespace Forelle.Parsing.Construction
         /// For each path from <paramref name="currentState"/>, considers expanding the path using
         /// other rules that reference the <see cref="Symbol"/> of the path's root <see cref="PotentialParseNode"/>
         /// </summary>
-        private void ExpandOuter(UnifyState currentState, PriorityQueue<UnifyState> priorityQueue)
+        private void ExpandRoots(UnifyState currentState, PriorityQueue<UnifyState> priorityQueue)
         {
-            if (!currentState.CanHaveRootExpansions) { return; }
+            // since root expansions require us to reset progress, we don't allow such expansions once
+            // progress have been made. We could consider allowing expansions with rules where the reference index
+            // is zero, since such rules add leaves only to the end of the tree and therefore would not require a
+            // progress reset. However, at this time I don't think attempting this is worth the added complexity
+            if (currentState.ProgressCount > 0) { return; }
             
-            for (var i = 0; i < currentState.Paths.Length; ++i)
+            for (var i = Math.Max(currentState.MaxPathIndexExpandedAtCurrentProgress, 0); i < currentState.Paths.Length; ++i)
             {
-                var rootNode = RootOf(currentState.Paths[i].Path);
-                foreach (var reference in this._nonDiscriminatorSymbolReferences[rootNode.Symbol])
+                var pathState = currentState.Paths[i];
+
+                // we only allow root expansions when we haven't made leaf expansions yet. This avoids 
+                // us generating the same state twice via different expansion sequences
+                if (!pathState.HasLeafExpansions)
                 {
-                    var newRootNode = new PotentialParseParentNode(
-                        reference.rule,
-                        reference.rule.Symbols.Select((s, index) => index == reference.index ? rootNode : new PotentialParseLeafNode(s))
-                    );
-                    var newPathState = new PathUnifyState(
-                        GetFirstPath(newRootNode),
-                        expansionCount: currentState.Paths[i].ExpansionCount + 1,
-                        leafNodeCount: newRootNode.Leaves.Count
-                    );
-                    priorityQueue.Enqueue(new UnifyState(
-                        currentState.Paths.SetItem(i, newPathState),
-                        progressCount: 0,
-                        canHaveRootExpansions: true
-                    ));
+                    var rootNode = RootOf(pathState.Path);
+                    foreach (var reference in this._nonDiscriminatorSymbolReferences[rootNode.Symbol])
+                    {
+                        var newRootNode = new PotentialParseParentNode(
+                            reference.rule,
+                            reference.rule.Symbols.Select((s, index) => index == reference.index ? rootNode : new PotentialParseLeafNode(s))
+                        );
+                        var newPathState = new PathUnifyState(
+                            GetFirstPath(newRootNode),
+                            expansionCount: pathState.ExpansionCount + 1,
+                            hasLeafExpansions: pathState.HasLeafExpansions, // will be false (see check above)
+                            // in the new root, all symbols are leaf nodes except where we slot in the old root. Thus, the increase
+                            // in leaf nodes is one less than the number of rule symbols. Because a reference rule must have at least
+                            // one symbol, this always increases the leaf node count
+                            leafNodeCount: pathState.LeafNodeCount + (reference.rule.Symbols.Count - 1)
+                        );
+                        priorityQueue.Enqueue(new UnifyState(
+                            currentState.Paths.SetItem(i, newPathState),
+                            progressCount: currentState.ProgressCount, // will be 0 (see check above)
+                            maxPathIndexExpandedAtCurrentProgress: i
+                        ));
+                    }
                 }
             }
         }
@@ -215,17 +230,31 @@ namespace Forelle.Parsing.Construction
             public UnifyState(
                 ImmutableArray<PathUnifyState> paths,
                 int progressCount,
-                bool canHaveRootExpansions)
+                int maxPathIndexExpandedAtCurrentProgress)
             {
+                Invariant.Require(maxPathIndexExpandedAtCurrentProgress >= -1 && maxPathIndexExpandedAtCurrentProgress < paths.Length);
+
                 this.Paths = paths;
                 this.ProgressCount = progressCount;
-                this.CanHaveRootExpansions = canHaveRootExpansions;
+                this.MaxPathIndexExpandedAtCurrentProgress = maxPathIndexExpandedAtCurrentProgress;
             }
 
             public ImmutableArray<PathUnifyState> Paths { get; }
+            /// <summary>
+            /// The number of leaves we've bypassed thus far across all paths
+            /// </summary>
             public int ProgressCount { get; }
-            public bool CanHaveRootExpansions { get; }
-
+            /// <summary>
+            /// The max index in <see cref="Paths"/> which has been expanded since <see cref="ProgressCount"/> last changed
+            /// or -1 if no paths have been expanded.
+            /// 
+            /// The purpose of tracking this is to allow us to avoid generating the same state via different expansion
+            /// sequences. For example, we might expand path 0 and then path 3 or vice-versa. We avoid this by disallowing
+            /// expansions of paths lower than this index so that once path 3 is expanded we can't go back and expand 0, 1, or 2
+            /// until we make progress.
+            /// </summary>
+            public int MaxPathIndexExpandedAtCurrentProgress { get; }
+            
             private int _cachedTotalExpansionCount = -1;
 
             public int TotalExpansionCount
@@ -262,15 +291,20 @@ namespace Forelle.Parsing.Construction
             public PathUnifyState(
                 ParseTreePath path,
                 int expansionCount,
+                bool hasLeafExpansions,
                 int leafNodeCount)
             {
+                Invariant.Require(!hasLeafExpansions || expansionCount > 0);
+
                 this.Path = path;
                 this.ExpansionCount = expansionCount;
+                this.HasLeafExpansions = hasLeafExpansions;
                 this.LeafNodeCount = leafNodeCount;
             }
 
             public ImmutableLinkedList<(PotentialParseNode node, int index)> Path { get; }
             public int ExpansionCount { get; }
+            public bool HasLeafExpansions { get; }
             public int LeafNodeCount { get; }
         }
 
