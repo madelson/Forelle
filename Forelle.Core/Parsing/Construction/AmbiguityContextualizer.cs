@@ -117,7 +117,7 @@ namespace Forelle.Parsing.Construction
                 return Array.Empty<PotentialParseParentNode>();
             }
 
-            if (discriminatorContext is PrefixDiscriminatorContext)
+            if (mappingEntry.isPrefix)
             {
                 var adjustedNode = new PotentialParseParentNode(
                         mappedRule.Rule,
@@ -138,7 +138,7 @@ namespace Forelle.Parsing.Construction
             // otherwise, expand using the expansion path and then do a normal expansion
             var derivations = ((PostTokenSuffixDiscriminatorContext.RuleMapping)ruleMapping).Derivations;
             var expandedDerivations = derivations.Select(d => this.ExpandDiscriminatorDerivation(discriminatorNode, derivation: d));
-            var results = expandedDerivations.SelectMany(d => this.ExpandDiscriminatorContexts(d, lookaheadToken, alreadyExpandedRuleMappings))
+            var results = expandedDerivations.SelectMany(d => this.ExpandDiscriminatorContexts(d, lookaheadToken, alreadyExpandedRuleMappings.Add(mappingEntry)))
                 .ToArray();
             return results;
         }
