@@ -8,6 +8,7 @@ namespace Forelle
 {
     public sealed class Rule
     {
+        // todo could put stuff relevant to this in a separate partial file
         private RuleRemainder[] _cachedRuleRemainders;
 
         public Rule(NonTerminal produced, params Symbol[] symbols)

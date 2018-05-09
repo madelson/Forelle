@@ -293,7 +293,7 @@ namespace Forelle.Parsing.Construction
         
         private ParserNode TryCreateDiscriminatorLookaheadParserNode(Token lookaheadToken, IReadOnlyList<RuleRemainder> rules)
         {
-            if (rules.Any(r => r.Symbols.Count > 500))
+            if (rules.Any(r => r.Symbols.Count > 100))
             {
                 // TODO rather than simply hitting this and giving up, we should be able to handle such cases by considering the creation
                 // of new prefix discriminators (as opposed to hoping that they arise "naturally"). Depending on whether we can discriminate the suffix, 
@@ -357,7 +357,7 @@ namespace Forelle.Parsing.Construction
                     discriminatorRules.Select(r => new PostTokenSuffixDiscriminatorContext.RuleMapping(
                         discriminatorRule: r, 
                         mappedRule: suffixToRuleMapping[r.Symbols].rule,
-                        expansionPaths: suffixToRuleMapping[r.Symbols].expansions
+                        derivations: suffixToRuleMapping[r.Symbols].derivations
                     )),
                     lookaheadToken
                 )
@@ -371,11 +371,11 @@ namespace Forelle.Parsing.Construction
             );
         }
 
-        private Dictionary<IReadOnlyList<Symbol>, (RuleRemainder rule, IReadOnlyList<IReadOnlyList<RuleRemainder>> expansions)> TryBuildSuffixToRuleMapping(
+        private Dictionary<IReadOnlyList<Symbol>, (RuleRemainder rule, IReadOnlyList<PotentialParseParentNode> derivations)> TryBuildSuffixToRuleMapping(
             Token lookaheadToken, 
             IReadOnlyList<RuleRemainder> rules)
         {
-            var suffixToRuleMapping = new Dictionary<IReadOnlyList<Symbol>, (RuleRemainder rule, IReadOnlyList<IReadOnlyList<RuleRemainder>> expansions)>(EqualityComparers.GetSequenceComparer<Symbol>());
+            var suffixToRuleMapping = new Dictionary<IReadOnlyList<Symbol>, (RuleRemainder rule, IReadOnlyList<PotentialParseParentNode> derivations)>(EqualityComparers.GetSequenceComparer<Symbol>());
             foreach (var rule in rules)
             {
                 var suffixes = this._discriminatorHelper.TryGatherPostTokenSuffixes(lookaheadToken, rule);
@@ -392,7 +392,7 @@ namespace Forelle.Parsing.Construction
                         // have disjoint follow sets. However, this seems like it would come up rarely
                         return null;
                     }
-                    suffixToRuleMapping.Add(suffix.Key, (rule, expansions: suffix.ToArray()));
+                    suffixToRuleMapping.Add(suffix.Key, (rule, derivations: suffix.ToArray()));
                 }
             }
             return suffixToRuleMapping;

@@ -7,9 +7,6 @@ using System.Text;
 
 namespace Forelle.Parsing.Construction
 {
-    // todo remove unify
-    // todo fix cursor logic
-
     internal class AmbiguityContextualizer
     {
         private readonly IReadOnlyDictionary<NonTerminal, IReadOnlyList<Rule>> _rulesByProduced;
@@ -49,7 +46,7 @@ namespace Forelle.Parsing.Construction
             
             var results = rules.ToDictionary(
                 r => r,
-                r => this.ExpandContexts(DefaultParseOf(r.Rule), lookaheadToken, r.Start).ToArray()
+                r => this.ExpandContexts(DefaultMarkedParseOf(r), lookaheadToken).ToArray()
             );
             Invariant.Require(results.SelectMany(kvp => kvp.Value).All(n => n.CursorPosition.HasValue && !n.HasTrailingCursor()), "all expansions should contain the lookahead token");
 
@@ -61,97 +58,148 @@ namespace Forelle.Parsing.Construction
             return crossJoinedContexts;
         }
         
-        private IReadOnlyList<PotentialParseNode> ExpandContexts(PotentialParseParentNode node, Token lookaheadToken, int position)
+        private IReadOnlyList<PotentialParseNode> ExpandContexts(PotentialParseParentNode node, Token lookaheadToken)
         {
-            var results = node.Symbol.SyntheticInfo is DiscriminatorSymbolInfo
-                ? this.ExpandDiscriminatorContexts(node, lookaheadToken, position)
-                : this.ExpandNonDiscriminatorContexts(node, lookaheadToken, position, alreadyExpanded: ImmutableHashSet<Rule>.Empty);
-            return results;
-        }
-
-        private IReadOnlyList<PotentialParseNode> ExpandDiscriminatorContexts(PotentialParseParentNode discriminatorNode, Token lookaheadToken, int position)
-        {
-            Invariant.Require(discriminatorNode.Symbol.SyntheticInfo is DiscriminatorSymbolInfo);
-
-            var results = this._discriminatorContexts[discriminatorNode.Rule.Produced]
-                .SelectMany(c => this.ExpandDiscriminatorContext(discriminatorNode, c, lookaheadToken, position))
+            // first remove all discriminators (no-op if there are none)
+            var nonDiscriminatorExpandedNodes = this.ExpandDiscriminatorContexts(
+                node, 
+                lookaheadToken, 
+                alreadyExpandedRuleMappings: ImmutableHashSet<(Rule from, RuleRemainder to, bool isPrefix)>.Empty
+            );
+            // then expand
+            var results = nonDiscriminatorExpandedNodes.SelectMany(
+                    n => this.ExpandNonDiscriminatorContexts(n, lookaheadToken, alreadyExpanded: ImmutableHashSet<(Rule rule, int index)>.Empty)
+                )
                 .ToArray();
             return results;
         }
 
-        private IReadOnlyList<PotentialParseNode> ExpandDiscriminatorContext(
-            PotentialParseParentNode discriminatorNode, 
+        private IReadOnlyList<PotentialParseParentNode> ExpandDiscriminatorContexts(
+            PotentialParseParentNode possibleDiscriminatorNode, 
+            Token lookaheadToken,
+            ImmutableHashSet<(Rule from, RuleRemainder to, bool isPrefix)> alreadyExpandedRuleMappings)
+        {
+            if (!(possibleDiscriminatorNode.Symbol.SyntheticInfo is DiscriminatorSymbolInfo))
+            {
+                return new[] { possibleDiscriminatorNode }; // no-op
+            }
+
+            var results = this._discriminatorContexts[possibleDiscriminatorNode.Rule.Produced]
+                .SelectMany(c => this.ExpandDiscriminatorContext(possibleDiscriminatorNode, c, lookaheadToken, alreadyExpandedRuleMappings))
+                .ToArray();
+            return results;
+        }
+
+        private IReadOnlyList<PotentialParseParentNode> ExpandDiscriminatorContext(
+            PotentialParseParentNode discriminatorNode,
             DiscriminatorContext discriminatorContext,
             Token lookaheadToken,
-            int position)
+            ImmutableHashSet<(Rule from, RuleRemainder to, bool isPrefix)> alreadyExpandedRuleMappings)
         {
-            var ruleMapping = discriminatorContext.RuleMappings.Single(t => t.DiscriminatorRule == discriminatorNode.Rule);
+            // note that this can be empty in the case where a particular prefix context only maps a portion of the rules
+            var ruleMappings = discriminatorContext.RuleMappings.Where(t => t.DiscriminatorRule == discriminatorNode.Rule);
+
+            return ruleMappings.SelectMany(m => this.ExpandDiscriminatorContextRuleMapping(discriminatorNode, discriminatorContext, m, lookaheadToken, alreadyExpandedRuleMappings))
+                .ToArray();
+        }
+
+        private IReadOnlyList<PotentialParseParentNode> ExpandDiscriminatorContextRuleMapping(
+            PotentialParseParentNode discriminatorNode,
+            DiscriminatorContext discriminatorContext,
+            DiscriminatorContext.RuleMapping ruleMapping,
+            Token lookaheadToken,
+            ImmutableHashSet<(Rule from, RuleRemainder to, bool isPrefix)> alreadyExpandedRuleMappings)
+        {
             var mappedRule = ruleMapping.MappedRule;
+            var mappingEntry = (from: ruleMapping.DiscriminatorRule, to: ruleMapping.MappedRule, isPrefix: discriminatorContext is PrefixDiscriminatorContext);
+            if (alreadyExpandedRuleMappings.Contains(mappingEntry))
+            {
+                return Array.Empty<PotentialParseParentNode>();
+            }
 
             if (discriminatorContext is PrefixDiscriminatorContext)
             {
-                var adjustedPosition = mappedRule.Start - (discriminatorNode.Children.Count - position);
                 var adjustedNode = new PotentialParseParentNode(
-                    mappedRule.Rule,
-                    discriminatorNode.Children.Concat(mappedRule.Symbols.Select(s => new PotentialParseLeafNode(s)))
-                );
+                        mappedRule.Rule,
+                        discriminatorNode.Children.Select(ch => ch.WithoutCursor())
+                            .Concat(mappedRule.Symbols.Select(s => new PotentialParseLeafNode(s)))
+                    )
+                    .WithCursor(discriminatorNode.CursorPosition.Value);
 
                 // for a prefix, just expand
                 var prefixResult = this.ExpandDiscriminatorContexts(
                     adjustedNode,
                     lookaheadToken,
-                    adjustedPosition
+                    alreadyExpandedRuleMappings.Add(mappingEntry)
                 );
                 return prefixResult;
             }
 
             // otherwise, expand using the expansion path and then do a normal expansion
-            var expansionPaths = ((PostTokenSuffixDiscriminatorContext.RuleMapping)ruleMapping).ExpansionPaths;
-            var expanded = expansionPaths.Select(p => (
-                node: this.ExpandDiscriminatorExpansionPath(p.ToImmutableLinkedList(), discriminatorNode.Children.ToImmutableLinkedList()),
-                position: p[0].Start + 1 + position
-            ));
-            var results = expanded.SelectMany(t => this.ExpandContexts(t.node, lookaheadToken, t.position))
+            var derivations = ((PostTokenSuffixDiscriminatorContext.RuleMapping)ruleMapping).Derivations;
+            var expandedDerivations = derivations.Select(d => this.ExpandDiscriminatorDerivation(discriminatorNode, derivation: d));
+            var results = expandedDerivations.SelectMany(d => this.ExpandDiscriminatorContexts(d, lookaheadToken, alreadyExpandedRuleMappings))
                 .ToArray();
             return results;
         }
 
-        private PotentialParseParentNode ExpandDiscriminatorExpansionPath(
-            ImmutableLinkedList<RuleRemainder> expansionPath,
-            // todo probably should be IReadOnlyList based on usage
-            ImmutableLinkedList<PotentialParseNode> existingParseNodes)
+        private PotentialParseParentNode ExpandDiscriminatorDerivation(
+            PotentialParseParentNode discriminatorNode,
+            PotentialParseParentNode derivation)
         {
-            var (head, rest) = expansionPath;
-
-            // the number of nodes we expect to match is the number that follow the expansion of
-            // the head node
-            var existingParseMatchCount = Math.Max(head.Rule.Symbols.Count - (head.Start + 1), 0);
-            Invariant.Require(existingParseMatchCount <= existingParseNodes.Count);
-            
-            var result = new PotentialParseParentNode(
-                head.Rule,
-                head.Rule.Symbols.Select(
-                    // everything before start parsed as empty (since we were peeling off a token)
-                    (s, i) => i < head.Start ? this.EmptyParseOf((NonTerminal)s)
-                        // at start itself we expand using the rest of the path
-                        // TODO what do we do here if rest.Count == 0 and i == head.Start???
-                        : i == head.Start && rest.Count > 0 ? this.ExpandDiscriminatorExpansionPath(rest, existingParseNodes.SubList(0, existingParseNodes.Count - existingParseMatchCount))
-                        // for suffix symbols use discriminatorNode if we have it
-                        : i > head.Start ? existingParseNodes.Skip(existingParseNodes.Count - existingParseMatchCount).ElementAt(i - (head.Start + 1))
-                        : (PotentialParseNode)new PotentialParseLeafNode(s)
-                )
-            );
+            var nodesToIncorporate = new Queue<PotentialParseNode>(discriminatorNode.Children);
+            var expanded = this.ExpandDiscriminatorDerivation(nodesToIncorporate, derivation);
+            // in most cases, expanded will incorporate the cursor automatically because one of
+            // nodesToIncorporate will have it. The exception is when discriminatorNode has zero children
+            // AND a trailing cursor. Thus, we add it if needed (WithTrailingCursor is a noop if expanded
+            // already has the trailing cursor
+            var result = discriminatorNode.HasTrailingCursor()
+                ? (PotentialParseParentNode)expanded.WithTrailingCursor()
+                : expanded;
+            Invariant.Require(result.CursorPosition.HasValue);
             return result;
+        }
+
+        private PotentialParseParentNode ExpandDiscriminatorDerivation(
+            Queue<PotentialParseNode> nodesToIncorporate,
+            PotentialParseParentNode derivation)
+        {
+            var discriminatorLookaheadTokenPosition = derivation.CursorPosition.Value;
+            var newChildren = new List<PotentialParseNode>(capacity: derivation.Children.Count);
+
+            // retain all children before the discriminator lookahead
+            for (var i = 0; i < discriminatorLookaheadTokenPosition; ++i)
+            {
+                newChildren.Add(derivation.Children[i]);
+            }
+            
+            // at the discriminator lookahead, either recurse or just remove the cursor
+            if (derivation.Children[discriminatorLookaheadTokenPosition] is PotentialParseParentNode parent)
+            {
+                newChildren.Add(this.ExpandDiscriminatorDerivation(nodesToIncorporate, parent));
+            }
+            else
+            {
+                newChildren.Add(derivation.Children[discriminatorLookaheadTokenPosition].WithoutCursor());
+            }
+
+            // beyond the discriminator lookahead, add nodes from the original discriminator rule
+            for (var i = discriminatorLookaheadTokenPosition + 1; i < derivation.Children.Count; ++i)
+            {
+                Invariant.Require(derivation.Children[i].Symbol == nodesToIncorporate.Peek().Symbol);
+                newChildren.Add(nodesToIncorporate.Dequeue());
+            }
+
+            return new PotentialParseParentNode(derivation.Rule, newChildren);
         }
  
         private IReadOnlyList<PotentialParseNode> ExpandNonDiscriminatorContexts(
             PotentialParseParentNode node,
             Token lookaheadToken,
-            int position,
-            ImmutableHashSet<Rule> alreadyExpanded)
+            ImmutableHashSet<(Rule rule, int index)> alreadyExpanded)
         {
-            var innerContexts = this.ExpandFirstContexts(node, lookaheadToken, position);
-            var outerContexts = this.ExpandFollowContexts(node, lookaheadToken, position, alreadyExpanded);
+            var innerContexts = this.ExpandFirstContexts(node, lookaheadToken);
+            var outerContexts = this.ExpandFollowContexts(node, lookaheadToken, alreadyExpanded);
 
             var results = innerContexts.Append(outerContexts).ToArray();
             return results;
@@ -159,13 +207,12 @@ namespace Forelle.Parsing.Construction
 
         private IReadOnlyList<PotentialParseNode> ExpandFirstContexts(
             PotentialParseNode node,
-            Token lookaheadToken,
-            int position)
+            Token lookaheadToken)
         {
+            var position = node.CursorPosition.Value;
+
             if (node is PotentialParseParentNode parent)
             {
-                Invariant.Require(0 <= position && position <= parent.Children.Count);
-
                 // the expansion point is past all children, so we can't expand
                 if (position == parent.Children.Count)
                 {
@@ -177,7 +224,7 @@ namespace Forelle.Parsing.Construction
                 var expandedChildren = Enumerable.Range(position, count: parent.Children.Count - position)
                     .TakeWhile(p => p == position || this.IsNullable(parent.Children[p - 1]))
                     .SelectMany(
-                        p => this.ExpandFirstContexts(parent.Children[p], lookaheadToken, position: 0),
+                        p => this.ExpandFirstContexts(p == position ? parent.Children[p] : parent.Children[p].WithCursor(0), lookaheadToken),
                         (p, expanded) => (position: p, expanded)
                     );
                 var results = expandedChildren.Select(t => new PotentialParseParentNode(
@@ -200,8 +247,8 @@ namespace Forelle.Parsing.Construction
                 // expand each rule with the token in the first
                 var results = this._rulesByProduced[nonTerminal]
                     .Where(r => this._firstFollowProvider.FirstOf(r.Symbols).Contains(lookaheadToken))
-                    .Select(DefaultParseOf)
-                    .SelectMany(n => this.ExpandFirstContexts(n, lookaheadToken, position: 0))
+                    .Select(r => DefaultMarkedParseOf(r.Skip(0)))
+                    .SelectMany(n => this.ExpandFirstContexts(n, lookaheadToken))
                     .ToArray();
                 return results;
             }
@@ -217,10 +264,9 @@ namespace Forelle.Parsing.Construction
         private IReadOnlyList<PotentialParseNode> ExpandFollowContexts(
             PotentialParseParentNode node,
             Token lookaheadToken,
-            int position,
-            ImmutableHashSet<Rule> alreadyExpanded) // todo should this be (Rule, index)?
+            ImmutableHashSet<(Rule rule, int index)> alreadyExpanded)
         {
-            Invariant.Require(0 <= position && position <= node.Rule.Symbols.Count);
+            var position = node.CursorPosition.Value;
 
             // if the remainder of the rule isn't nullable, we're done
             if (Enumerable.Range(position, count: node.Children.Count - position)
@@ -237,21 +283,31 @@ namespace Forelle.Parsing.Construction
 
             // otherwise, then just find all rules that reference the current rule and expand them
 
-            // we know that the current rule was parsed using the given prefix and then null productions for all remaining symbols (since we're looking at follow)
-            PotentialParseNode ruleParse = new PotentialParseParentNode(
-                node.Rule,
-                node.Children.Select((ch, pos) => pos < position ? ch : this.EmptyParseOf(ch))
-            );
+            // we know that the current rule was parsed using the given prefix and then null productions 
+            // for all remaining symbols (since we're looking at follow). Therefore, if we already had a
+            // trailing cursor nothing has changed. If we didn't have a trailing cursor then we need to
+            // move the cursor to the end, nulling out all children encountered along the way
+            PotentialParseNode ruleParse = node.HasTrailingCursor()
+                ? node
+                : new PotentialParseParentNode(
+                    node.Rule,
+                    node.Children.Select(
+                        (ch, pos) => pos < position ? ch.WithoutCursor() 
+                        : pos < node.Children.Count - 1 ? this.EmptyParseOf(ch)
+                        : this.EmptyParseOf(ch).WithTrailingCursor())
+                );
 
             // todo I'm concerned that these restrictions might make us miss lookback patterns. Basically they
             // would add some # of repeated null symbols between the current symbol and the lookahead token
             var expanded = this._nonDiscriminatorSymbolReferences.Value[node.Rule.Produced]
-                // don't expand the same reference twice (todo do we need this or does the condition below handle all relevant cases?)
-                .Where(reference => !alreadyExpanded.Contains(reference.rule))
-                // expand a reference if it (a) changes the produced symbol or (b) 
+                // don't expand the same reference twice
+                .Where(reference => !alreadyExpanded.Contains(reference))
+                // expand a reference if it (a) changes the produced symbol OR (b) 
                 // can have the lookahead token appear after the reference index. Expansions failing both of these criteria
                 // fail to make "progress"; we just end up right back at this line in the same state. Because of this, such
                 // expansions are making the context pattern less general but not more descriptive
+                // TODO if we go back to a look-back approach we may need to handle this more robustly by having a node type that references
+                // "any number" of expansion using rules that would otherwise fail this criterion. We may need this anyway...
                 .Where(
                     reference => reference.rule.Produced != node.Rule.Produced 
                     || this._firstFollowProvider.FirstOf(reference.rule.Skip(reference.index + 1).Symbols).Contains(lookaheadToken)
@@ -259,11 +315,18 @@ namespace Forelle.Parsing.Construction
                 .Select(reference => (
                     node: new PotentialParseParentNode(
                         reference.rule,
-                        reference.rule.Symbols.Select((s, i) => i == reference.index ? ruleParse : new PotentialParseLeafNode(s))
+                        reference.rule.Symbols.Select(
+                            // remove the current cursor as long as there are following symbols (they'll get the cursor)
+                            (s, i) => i == reference.index && i < reference.rule.Symbols.Count - 1 ? ruleParse.WithoutCursor()
+                                : i == reference.index ? ruleParse
+                                // place the cursor on the symbol that follows the reference point
+                                : i == reference.index + 1 ? new PotentialParseLeafNode(s, cursorPosition: 0)
+                                : PotentialParseNode.Create(s)
+                        )
                     ),
-                    position: reference.index + 1
+                    reference
                 ));
-            var result = expanded.SelectMany(t => this.ExpandNonDiscriminatorContexts(t.node, lookaheadToken, t.position, alreadyExpanded: alreadyExpanded.Add(t.node.Rule)));
+            var result = expanded.SelectMany(t => this.ExpandNonDiscriminatorContexts(t.node, lookaheadToken, alreadyExpanded: alreadyExpanded.Add(t.reference)));
             return result.ToArray();
         }
 
@@ -289,7 +352,11 @@ namespace Forelle.Parsing.Construction
             );
         }
 
-        private static PotentialParseParentNode DefaultParseOf(Rule rule) => (PotentialParseParentNode)PotentialParseNode.Create(rule);
+        private static PotentialParseParentNode DefaultMarkedParseOf(RuleRemainder rule)
+        {
+            return new PotentialParseParentNode(rule.Rule, rule.Rule.Symbols.Select(PotentialParseNode.Create))
+                .WithCursor(rule.Start);
+        }
 
         private static List<ImmutableLinkedList<T>> CrossJoin<T>(IEnumerable<IReadOnlyCollection<T>> values)
         {

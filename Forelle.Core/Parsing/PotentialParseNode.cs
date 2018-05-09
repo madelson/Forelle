@@ -54,6 +54,7 @@ namespace Forelle.Parsing
 
         internal abstract void ToString(StringBuilder builder, bool renderCursorOnly);
 
+        // todo could cache default creates (at least symbol) with the Symbol class
         public static PotentialParseNode Create(Symbol symbol) => new PotentialParseLeafNode(symbol);
         public static PotentialParseNode Create(Rule rule) => Create(rule, rule?.Symbols.Select(Create));
         public static PotentialParseNode Create(Rule rule, IEnumerable<PotentialParseNode> children) => new PotentialParseParentNode(rule, children);
@@ -184,15 +185,18 @@ namespace Forelle.Parsing
                 {
                     throw new ArgumentException($"Incorrect symbol type for {nameof(children)}[{i}]. Expected '{this.Rule.Symbols[i]}', but found '{child.Symbol}'.", nameof(children));
                 }
- 
-                if (i == this.CursorPosition)
-                {
-                    Invariant.Require(child.CursorPosition.HasValue && !child.HasTrailingCursor());
-                }
                 else if (child.CursorPosition.HasValue)
                 {
-                    Invariant.Require(!this.CursorPosition.HasValue);
-                    this.CursorPosition = child.HasTrailingCursor() ? i + 1 : i;
+                    Invariant.Require(!this.CursorPosition.HasValue, "at most one child may have a cursor set");
+                    if (child.HasTrailingCursor())
+                    {
+                        Invariant.Require(i == this.Children.Count - 1, "only a trailing child may have a trailing cursor");
+                        this.CursorPosition = i + 1;
+                    }
+                    else
+                    {
+                        this.CursorPosition = i;
+                    }
                 }
             }
         }

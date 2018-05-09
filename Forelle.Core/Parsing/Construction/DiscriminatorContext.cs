@@ -65,6 +65,8 @@ namespace Forelle.Parsing.Construction
 
             public Rule DiscriminatorRule { get; }
             public RuleRemainder MappedRule { get; }
+
+            public override string ToString() => $"{this.DiscriminatorRule} maps to {this.MappedRule}";
         }
     }
 
@@ -77,12 +79,11 @@ namespace Forelle.Parsing.Construction
         {
             foreach (var ruleMapping in ruleMappings)
             {
-                foreach (var expansionPath in ruleMapping.ExpansionPaths)
+                foreach (var derivation in ruleMapping.Derivations)
                 {
-                    var lastSegment = expansionPath[expansionPath.Count - 1];
-                    if (lastSegment.Symbols[0] != lookaheadToken)
+                    if (derivation.GetLeafAtCursorPosition().Symbol != lookaheadToken)
                     {
-                        throw new ArgumentException($"invalid expansion path {string.Join(" -> ", expansionPath)}: must end with the lookahead token", nameof(ruleMappings));
+                        throw new ArgumentException($"invalid expansion path {string.Join(" -> ", derivation)}: must end with the lookahead token", nameof(ruleMappings));
                     }
                 }
             }
@@ -95,20 +96,19 @@ namespace Forelle.Parsing.Construction
             public RuleMapping(
                 Rule discriminatorRule,
                 RuleRemainder mappedRule,
-                IEnumerable<IReadOnlyList<RuleRemainder>> expansionPaths)
+                IEnumerable<PotentialParseParentNode> derivations)
                 : base(discriminatorRule, mappedRule)
             {
-                this.ExpansionPaths = expansionPaths?.ToArray() ?? throw new ArgumentNullException(nameof(expansionPaths));
+                this.Derivations = derivations?.ToArray() ?? throw new ArgumentNullException(nameof(derivations));
                 
-                if (this.ExpansionPaths.Count == 0) { throw new ArgumentException("must not be empty", nameof(expansionPaths)); }
-                foreach (var expansionPath in this.ExpansionPaths)
+                if (this.Derivations.Count == 0) { throw new ArgumentException("must not be empty", nameof(derivations)); }
+                foreach (var derivation in this.Derivations)
                 {
-                    Guard.NotNullOrContainsNull(expansionPath, nameof(expansionPaths));
-                    if (expansionPath[0].Rule != this.MappedRule.Rule) { throw new ArgumentException("invalid expansion path start", nameof(expansionPaths)); }
+                    if (derivation.Rule != this.MappedRule.Rule) { throw new ArgumentException("invalid derivation root", nameof(derivations)); }
                 }
             }
             
-            public IReadOnlyList<IReadOnlyList<RuleRemainder>> ExpansionPaths { get; }
+            public IReadOnlyList<PotentialParseParentNode> Derivations { get; }
         }
     }
 

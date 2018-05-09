@@ -9,11 +9,11 @@ namespace Forelle.Parsing.Construction
 {
     internal class DiscriminatorHelper
     {
-        private readonly IReadOnlyDictionary<NonTerminal, IReadOnlyList<Rule>> _rules;
+        private readonly IReadOnlyDictionary<NonTerminal, IReadOnlyList<Rule>> _rulesByProduced;
         private readonly IFirstFollowProvider _firstFollowProvider;
 
         /// <summary>
-        /// The set of <see cref="NonTerminal"/>s in <see cref="_rules"/> last time <see cref="_discriminatorPrefixSearchTrie"/>
+        /// The set of <see cref="NonTerminal"/>s in <see cref="_rulesByProduced"/> last time <see cref="_discriminatorPrefixSearchTrie"/>
         /// was calculated. Used to determine when to recalculate
         /// </summary>
         private readonly HashSet<NonTerminal> _trieCacheSet = new HashSet<NonTerminal>();
@@ -23,7 +23,7 @@ namespace Forelle.Parsing.Construction
             IReadOnlyDictionary<NonTerminal, IReadOnlyList<Rule>> rules,
             IFirstFollowProvider firstFollowProvider)
         {
-            this._rules = rules; // no defensive copy; this will change as things are updated!
+            this._rulesByProduced = rules; // no defensive copy; this will change as things are updated!
             this._firstFollowProvider = firstFollowProvider;
         }
 
@@ -111,7 +111,7 @@ namespace Forelle.Parsing.Construction
             Token lookaheadToken)
         {
             // LOOKAHEAD constraint
-            var validDiscriminatorRules = this._rules[discriminator].Where(r => this._firstFollowProvider.NextOf(r).Contains(lookaheadToken))
+            var validDiscriminatorRules = this._rulesByProduced[discriminator].Where(r => this._firstFollowProvider.NextOf(r).Contains(lookaheadToken))
                 .ToList();
 
             var mapping = new Dictionary<RuleRemainder, Rule>(capacity: ruleMatches.Count);
@@ -170,9 +170,9 @@ namespace Forelle.Parsing.Construction
 
         private ImmutableTrie<Symbol, Rule> GetSearchTrie()
         {
-            if (this._trieCacheSet.Count < this._rules.Count)
+            if (this._trieCacheSet.Count < this._rulesByProduced.Count)
             {
-                foreach (var kvp in this._rules)
+                foreach (var kvp in this._rulesByProduced)
                 {
                     if (this._trieCacheSet.Add(kvp.Key)
                         && kvp.Key.SyntheticInfo is DiscriminatorSymbolInfo)
@@ -193,23 +193,29 @@ namespace Forelle.Parsing.Construction
         /// Gathers the set of <see cref="Symbol"/> lists which could form the remainder after consuming
         /// a <paramref name="prefixToken"/>
         /// </summary>
-        public Lookup<IReadOnlyList<Symbol>, IReadOnlyList<RuleRemainder>> TryGatherPostTokenSuffixes(Token prefixToken, RuleRemainder rule)
+        public ILookup<IReadOnlyList<Symbol>, PotentialParseParentNode> TryGatherPostTokenSuffixes(Token prefixToken, RuleRemainder rule)
         {
             // todo cleanup old code
 
             var oldResult = new HashSet<IReadOnlyList<Symbol>>(EqualityComparers.GetSequenceComparer<Symbol>());
-            var oldRet = this.TryGatherPostTokenSuffixes(prefixToken, rule, ImmutableStack<Symbol>.Empty, oldResult);
+            var oldRet = this.TryGatherPostTokenSuffixesOld(prefixToken, rule, ImmutableStack<Symbol>.Empty, oldResult);
 
-            var result = new Lookup<IReadOnlyList<Symbol>, IReadOnlyList<RuleRemainder>>(EqualityComparers.GetSequenceComparer<Symbol>());
-            var newRet = this.TryGatherPostTokenSuffixes(prefixToken, ImmutableLinkedList.Create(rule), ImmutableLinkedList<Symbol>.Empty, result);
+            var suffixesToExpansionPaths = new Lookup<IReadOnlyList<Symbol>, ImmutableLinkedList<RuleRemainder>>(EqualityComparers.GetSequenceComparer<Symbol>());
+            var newRet = this.TryGatherPostTokenSuffixes(prefixToken, ImmutableLinkedList.Create(rule), ImmutableLinkedList<Symbol>.Empty, suffixesToExpansionPaths);
+            var suffixesToDerivations = suffixesToExpansionPaths.SelectMany(g => g, (g, expansionPath) => (suffix: g.Key, expansionPath))
+                .ToLookup(
+                    t => t.suffix,
+                    t => this.ToDerivation(t.expansionPath, startingRuleOffset: rule.Start),
+                    suffixesToExpansionPaths.Comparer
+                );
 
-            if (!oldResult.SetEquals(result.Select(r => r.Key)) || oldRet != newRet)
+            if (!oldResult.SetEquals(suffixesToExpansionPaths.Select(r => r.Key)) || oldRet != newRet)
             {
                 throw new InvalidOperationException("fdafsd");
             }
 
             return newRet
-                ? result
+                ? suffixesToDerivations
                 : null;
         }
 
@@ -217,7 +223,7 @@ namespace Forelle.Parsing.Construction
             Token prefixToken,
             ImmutableLinkedList<RuleRemainder> expansionPath,
             ImmutableLinkedList<Symbol> suffix,
-            Lookup<IReadOnlyList<Symbol>, IReadOnlyList<RuleRemainder>> result)
+            Lookup<IReadOnlyList<Symbol>, ImmutableLinkedList<RuleRemainder>> result)
         {
             var rule = expansionPath.Head;
             if (!this._firstFollowProvider.NextOf(rule).Contains(prefixToken))
@@ -240,7 +246,7 @@ namespace Forelle.Parsing.Construction
                 // add the rest of the current rule's symbols to the suffix
                 var postExpansionSuffix = suffix.PrependRange(rule.Skip(1).Symbols);
                 var foundExpansionSuffixes = true;
-                foreach (var expansionRule in this._rules[nonTerminal])
+                foreach (var expansionRule in this._rulesByProduced[nonTerminal])
                 {
                     // even though we don't need all rule expansions to work, we use &= here rather than |=. This is because
                     // failing to add to result doesn't indicate failure; failure is ONLY when we reach the end of the rule 
@@ -263,16 +269,39 @@ namespace Forelle.Parsing.Construction
 
             // if we reach this point, then first symbol IS the token we're looking for.
             // This is because (a) we've checked that the token is in the Next set, (b)
-            // We've checked that they rule has at least one symbols and (c) we've checked
+            // We've checked that they rule has at least one symbol and (c) we've checked
             // that the symbol is not a non-terminal (and therefore is a token)
             Invariant.Require(rule.Symbols[0] == prefixToken);
             // therefore, whe can build a complete suffix set by just dropping the token
             // from the current rule and adding the rest of the symbols to the suffix
-            result.Add(
-                rule.Skip(1).Symbols.Concat(suffix).ToArray(),
-                expansionPath.Reverse().ToArray()
-            );
+            result.Add(rule.Skip(1).Symbols.Concat(suffix).ToArray(), expansionPath);
             return true;
+        }
+
+        private PotentialParseParentNode ToDerivation(ImmutableLinkedList<RuleRemainder> expansionPath, int startingRuleOffset)
+        {
+            Invariant.Require(expansionPath.Count > 0);
+
+            PotentialParseParentNode derivation = null;
+            var remainingExpansions = expansionPath;
+            while (remainingExpansions.TryDeconstruct(out var nextExpansion, out remainingExpansions))
+            {
+                derivation = new PotentialParseParentNode(
+                    nextExpansion.Rule,
+                    nextExpansion.Rule.Symbols.Select(
+                        // if we're at the expansion point, plug in either the derivation so far OR if we have none then the marked token
+                        (s, i) => i == nextExpansion.Start ? (derivation ?? new PotentialParseLeafNode(s, cursorPosition: 0).As<PotentialParseNode>())
+                            // else if we're looking at the start rule and we're before the starting offset, create a regular leaf
+                            : remainingExpansions.Count == 0 && i < startingRuleOffset ? PotentialParseNode.Create(s)
+                            // else if we're before the expansion point, create an empty leaf since we parsed the symbols as null to skip it
+                            : i < nextExpansion.Start ? new PotentialParseParentNode(this._rulesByProduced[(NonTerminal)s].Single(r => r.Symbols.Count == 0), Enumerable.Empty<PotentialParseNode>())
+                            // otherwise, create a normal leaf node
+                            : PotentialParseNode.Create(s)
+                    )
+                );
+            }
+
+            return derivation;
         }
 
         // todo remove
@@ -287,7 +316,7 @@ namespace Forelle.Parsing.Construction
         /// True if the gathering was successful, false if we were unable to perform remove <paramref name="prefixToken"/> from some path.
         /// This can happen if we find a nullable construction which has <paramref name="prefixToken"/> in its follow set
         /// </returns>
-        private bool TryGatherPostTokenSuffixes(
+        private bool TryGatherPostTokenSuffixesOld(
             Token prefixToken,
             RuleRemainder rule,
             ImmutableStack<Symbol> suffix,
@@ -313,14 +342,14 @@ namespace Forelle.Parsing.Construction
                         // set contains the token of interest
 
                         var newSuffix = suffix.Pop();
-                        var innerRules = this._rules[(NonTerminal)nextSuffixSymbol]
+                        var innerRules = this._rulesByProduced[(NonTerminal)nextSuffixSymbol]
                             .Where(r => this._firstFollowProvider.NextOf(r).Contains(prefixToken));
                         var success = true;
                         foreach (var innerRule in innerRules)
                         {
                             // we don't bail immediately on failure here because failures can be turned into successes at the
                             // end of the similar loop below
-                            success &= this.TryGatherPostTokenSuffixes(prefixToken, innerRule.Skip(0), newSuffix, result);
+                            success &= this.TryGatherPostTokenSuffixesOld(prefixToken, innerRule.Skip(0), newSuffix, result);
                         }
                         return success;
                     }
@@ -355,12 +384,12 @@ namespace Forelle.Parsing.Construction
                     newSuffix = newSuffix.Push(rule.Symbols[i]);
                 }
 
-                var innerRules = this._rules[(NonTerminal)rule.Symbols[0]]
+                var innerRules = this._rulesByProduced[(NonTerminal)rule.Symbols[0]]
                     .Where(r => this._firstFollowProvider.NextOf(r).Contains(prefixToken));
                 var success = true;
                 foreach (var innerRule in innerRules)
                 {
-                    success &= this.TryGatherPostTokenSuffixes(prefixToken, innerRule.Skip(0), newSuffix, result);
+                    success &= this.TryGatherPostTokenSuffixesOld(prefixToken, innerRule.Skip(0), newSuffix, result);
                 }
                 // the return value here is true if all recursive calls succeeded or if the current rule cannot 
                 // be followed by the prefix token. Note that we don't really expect this to come into play since the way

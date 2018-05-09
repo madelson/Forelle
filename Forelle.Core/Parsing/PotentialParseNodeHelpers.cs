@@ -21,20 +21,22 @@ namespace Forelle.Parsing
                 : new PotentialParseLeafNode(node.Symbol).As<PotentialParseNode>();
         }
 
-        public static PotentialParseNode WithCursor(this PotentialParseNode node, int cursorPosition)
+        public static TNode WithCursor<TNode>(this TNode node, int cursorPosition)
+            where TNode : PotentialParseNode
         {
             if (node.CursorPosition == cursorPosition) { return node; }
+            Invariant.Require(!node.CursorPosition.HasValue);
 
             if (node is PotentialParseParentNode parent)
             {
                 if (parent.Children.Count == 0)
                 {
                     Invariant.Require(cursorPosition == 0);
-                    return new PotentialParseParentNode(parent.Rule, hasTrailingCursor: true);
+                    return (TNode)new PotentialParseParentNode(parent.Rule, hasTrailingCursor: true).As<PotentialParseNode>();
                 }
 
                 Invariant.Require(cursorPosition >= 0 && cursorPosition <= parent.Children.Count);
-                var result = new PotentialParseParentNode(
+                PotentialParseNode result = new PotentialParseParentNode(
                     parent.Rule,
                     parent.Children.Select(
                         (ch, i) => i == cursorPosition ? ch.WithCursor(0)
@@ -45,10 +47,10 @@ namespace Forelle.Parsing
                 // we can fail to drop the cursor at the intended position if there is an empty (null)
                 // child at that position which would push the cursor to the next position
                 Invariant.Require(result.CursorPosition == cursorPosition);
-                return result;
+                return (TNode)result;
             }
 
-            return new PotentialParseLeafNode(node.Symbol, cursorPosition);
+            return (TNode)new PotentialParseLeafNode(node.Symbol, cursorPosition).As<PotentialParseNode>();
         }
 
         public static PotentialParseNode WithTrailingCursor(this PotentialParseNode node)
@@ -66,6 +68,16 @@ namespace Forelle.Parsing
             }
 
             return new PotentialParseLeafNode(node.Symbol, cursorPosition: 1);
+        }
+
+        public static PotentialParseLeafNode GetLeafAtCursorPosition(this PotentialParseNode node)
+        {
+            switch (node)
+            {
+                case PotentialParseParentNode parent: return parent.Children[node.CursorPosition.Value].GetLeafAtCursorPosition();
+                case PotentialParseLeafNode leaf: return node.CursorPosition == 0 ? leaf : throw new InvalidOperationException("trailing cursor");
+                default: throw new InvalidOperationException("Unexpected node type");
+            }
         }
     }
 }

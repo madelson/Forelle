@@ -135,9 +135,15 @@ namespace Forelle.Tests.Parsing.Construction
                     Exp
                 ),
                 Create(
-                    rules[cast, LeftParen, Id, RightParen, Exp],
-                    LeftParen, Id, RightParen,
-                    rules[Exp, term, Minus, Exp]
+                    rules[Exp, term],
+                    Create(
+                        rules[term, cast],
+                        Create(
+                            rules[cast, LeftParen, Id, RightParen, Exp],
+                            LeftParen, Id, RightParen,
+                            rules[Exp, term, Minus, Exp]
+                        )
+                    )
                 )
             );
             (parser, errors) = ParserGeneratorTest.CreateParser(rules, resolution);
