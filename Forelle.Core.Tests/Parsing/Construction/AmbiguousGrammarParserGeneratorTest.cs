@@ -42,11 +42,11 @@ namespace Forelle.Tests.Parsing.Construction
 	Exp(Foo(ID))");
 
             var ambiguityResolution = new AmbiguityResolution(
-                PotentialParseNode.Create(
+                Create(
                     rules[Exp, foo],
                     rules[foo, Id]
                 ),
-                PotentialParseNode.Create(
+                Create(
                     rules[Exp, bar],
                     rules[bar, Id]
                 )
@@ -111,12 +111,12 @@ namespace Forelle.Tests.Parsing.Construction
 
             var ambiguityResolution = new AmbiguityResolution(
                 // subtract
-                PotentialParseNode.Create(
+                Create(
                     rules[Exp, term, Minus, Exp],
-                    PotentialParseNode.Create(
+                    Create(
                         rules[term, LeftParen, Exp, RightParen],
                         LeftParen,
-                        PotentialParseNode.Create(
+                        Create(
                             rules[Exp, term],
                             rules[term, Id]
                         ),
@@ -126,9 +126,9 @@ namespace Forelle.Tests.Parsing.Construction
                     rules[Exp, term]
                 ),
                 // cast
-                PotentialParseNode.Create(
+                Create(
                     rules[Exp, term],
-                    PotentialParseNode.Create(
+                    Create(
                         rules[term, LeftParen, Id, RightParen, term],
                         LeftParen,
                         Id,
