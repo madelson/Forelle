@@ -12,6 +12,9 @@ namespace Forelle.Tests.Parsing.Construction
 {
     public class AmbiguousGrammarParserGeneratorTest
     {
+        // todo this test is interesting because it is ambiguous in Exp but not ambiguous in the
+        // context of Stmt. Therefore if we had a way to say "Exp doesn't need to be a start symbol"
+        // then this grammar should be handled without any help from ambiguity resolution
         [Test]
         public void TestSimpleAmbiguity()
         {
@@ -33,7 +36,27 @@ namespace Forelle.Tests.Parsing.Construction
 
             var (parser, errors) = ParserGeneratorTest.CreateParser(rules);
             errors.Count.ShouldEqual(1);
-            throw new NotImplementedException(); // more checks
+            errors[0].ShouldEqualIgnoreIndentation(
+@"Unable to distinguish between the following parse trees for the sequence of symbols [ID]:
+	Exp(Bar(ID))
+	Exp(Foo(ID))");
+
+            var ambiguityResolution = new AmbiguityResolution(
+                PotentialParseNode.Create(
+                    rules[Exp, foo],
+                    rules[foo, Id]
+                ),
+                PotentialParseNode.Create(
+                    rules[Exp, bar],
+                    rules[bar, Id]
+                )
+            );
+            (parser, errors) = ParserGeneratorTest.CreateParser(rules, ambiguityResolution);
+            CollectionAssert.IsEmpty(errors);
+
+            parser.Parse(new[] { Id }, Exp);
+            parser.Parsed.ToString()
+                .ShouldEqual("Exp(Foo(ID))");
         }
 
         [Test]
