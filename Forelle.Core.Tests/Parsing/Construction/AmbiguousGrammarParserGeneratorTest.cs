@@ -109,7 +109,41 @@ namespace Forelle.Tests.Parsing.Construction
     Exp(Term(""("" Exp(Term(ID)) "")"") - Exp(Term))
     Exp(Term(""("" ID "")"" Term(- Term)))");
 
-            throw new NotImplementedException();
+            var ambiguityResolution = new AmbiguityResolution(
+                // subtract
+                PotentialParseNode.Create(
+                    rules[Exp, term, Minus, Exp],
+                    PotentialParseNode.Create(
+                        rules[term, LeftParen, Exp, RightParen],
+                        LeftParen,
+                        PotentialParseNode.Create(
+                            rules[Exp, term],
+                            rules[term, Id]
+                        ),
+                        RightParen
+                    ),
+                    Minus,
+                    rules[Exp, term]
+                ),
+                // cast
+                PotentialParseNode.Create(
+                    rules[Exp, term],
+                    PotentialParseNode.Create(
+                        rules[term, LeftParen, Id, RightParen, term],
+                        LeftParen,
+                        Id,
+                        RightParen,
+                        rules[term, Minus, term]
+                    )
+                )
+            );
+
+            (parser, errors) = ParserGeneratorTest.CreateParser(rules, ambiguityResolution);
+            Assert.IsEmpty(errors);
+
+            parser.Parse(new[] { LeftParen, Id, RightParen, Minus, Id }, Exp);
+            parser.Parsed.ToString()
+                .ShouldEqual("Exp(Term((, Exp(Term(ID)), )), -, Exp(Term(ID)))");
         }
 
         [Test]
