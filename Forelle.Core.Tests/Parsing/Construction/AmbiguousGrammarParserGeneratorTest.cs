@@ -206,10 +206,21 @@ namespace Forelle.Tests.Parsing.Construction
             (parser, errors) = ParserGeneratorTest.CreateParser(rules, resolution);
             Assert.IsEmpty(errors);
 
+            // TODO: right now this fails to parse!
+            // Here's why: above we identify a valid ambiguity between E -> T - E
+            // and E -> T because "-" is in the follow of E. This ambiguity relies on a very specific structure
+            // for the parsed T (it needs symbols that could be a cast). The problem is that we optimistically
+            // do prefix parsing, so we handle parsing E by first parsing T and then going on to parse
+            // E -> ... vs. E -> ... - E. Because of this, the ambiguity resolution gets baked into a parser node
+            // that isn't at all dependent on what symbols made up the T, leading to it being applied in cases
+            // where it shouldn't be (which shuts off other valid parsing paths). In contrast, had we worked through
+            // that symbol set via a set of discriminators we'd be in a good place because we'd be applying our
+            // ambiguity context to a very specific scenario
+            parser.Parse(new[] { Id, Minus, Id }, Exp);
+
             //parser.Parse(new[] { LeftParen, Id, RightParen, Id, Minus, Id }, Exp);
             //ParserGeneratorTest.ToGroupedTokenString(parser.Parsed)
             //    .ShouldEqual("((( ID ) ID) - ID)");
-            parser.Parse(new[] { Id, Minus, Id }, Exp);
 
             // todo what if we resolve the other way?
             // todo would be nice to express resolutions as strings in tests...
