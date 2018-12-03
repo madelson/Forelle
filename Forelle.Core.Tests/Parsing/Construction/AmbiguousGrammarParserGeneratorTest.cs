@@ -165,7 +165,7 @@ namespace Forelle.Tests.Parsing.Construction
                 { term, cast },
                 
                 { cast, LeftParen, Id, RightParen, Exp },
-                // make cast not an alias
+                // make cast not an alias (todo shouldn't be needed)
                 { A, Plus, cast, Plus }
             };
 
