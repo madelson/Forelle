@@ -16,7 +16,8 @@ namespace Forelle.Parsing.Construction
     // To deal with cases like in DiscriminatorExpansionEdgeCasesTest, we might need
     // to introduce a new approach: custom discriminator prefixes that might not be differentiable (similar to common prefixes)
     //
-    // To deal with ambiguities, we might need to refine some options, such as preventing node sharing
+    // To deal with ambiguities, we might need to refine some options, such as preventing node sharing. Alternatively, we might
+    // need to simply make sure that the ambiguity context we get back is at the same scope as the node being parsed
     //
     // Left recursion is currently handled via up-front transforms, but it COULD potentially be handled as a custom node type, maybe even
     // incorporating Pratt precedence parsing. This would be very in-line with the philosophy of imitating hand-made parsers
