@@ -51,6 +51,8 @@ namespace Forelle.Tests.Parsing.Construction
             switch (node)
             {
                 case ParseRuleNode ruleNode:
+                    Log($"PARSE {ruleNode.Rule}");
+
                     var j = 0;
                     for (var i = 0; i < ruleNode.Rule.Symbols.Count; ++i)
                     {
@@ -67,8 +69,12 @@ namespace Forelle.Tests.Parsing.Construction
                     return ruleNode.Rule.Rule;
                 case TokenLookaheadNode tokenNode:
                     var nextToken = this.Peek();
+                    Log($"PEEK {nextToken}");
+
                     return this.Parse(tokenNode.Mapping[nextToken]);
                 case ParsePrefixSymbolsNode prefixNode:
+                    Log($"PARSE prefix ({prefixNode.Prefix.Count} symbols)");
+
                     foreach (var prefixElement in prefixNode.Prefix)
                     {
                         if (prefixElement.Token != null) { this.Eat(prefixElement.Token); }
@@ -76,10 +82,13 @@ namespace Forelle.Tests.Parsing.Construction
                     }
                     return this.Parse(prefixNode.SuffixNode);
                 case GrammarLookaheadNode grammarLookaheadNode:
+                    Log($"DISCRIMINATE {string.Join(" | ", grammarLookaheadNode.RuleMapping.Values)}");
+
                     if (this.IsInLookahead)
                     {
                         this.Eat(grammarLookaheadNode.Token);
                         var ruleUsed = this.Parse(grammarLookaheadNode.DiscriminatorParse);
+                        Log($"USED {ruleUsed} SHOULD USE {grammarLookaheadNode.RuleMapping[ruleUsed]}");
                         // TODO this potentially should perform any rule actions (e. g. state variables)
                         return grammarLookaheadNode.RuleMapping[ruleUsed];
                     }
@@ -89,6 +98,7 @@ namespace Forelle.Tests.Parsing.Construction
 
                         this.Eat(grammarLookaheadNode.Token);
                         var ruleUsed = this.Parse(grammarLookaheadNode.DiscriminatorParse);
+                        Log($"USED {ruleUsed} SHOULD USE {grammarLookaheadNode.RuleMapping[ruleUsed]}");
 
                         this._lookaheadIndex = -1;
 
@@ -148,6 +158,8 @@ namespace Forelle.Tests.Parsing.Construction
 
         private void Eat(Token expectedToken)
         {
+            Log($"EAT {expectedToken} @ {(this.IsInLookahead ? "L" + this._lookaheadIndex : this._index.ToString())}");
+
             var nextToken = this.Peek();
             if (nextToken != expectedToken)
             {
@@ -164,6 +176,9 @@ namespace Forelle.Tests.Parsing.Construction
                 ++this._index;
             }
         }
+
+        [System.Diagnostics.Conditional("TESTING_PARSER_INSTRUMENTATION")]
+        private static void Log(string message) => Console.WriteLine(message);
     }
 
     internal class SyntaxNode

@@ -20,6 +20,8 @@ namespace Forelle
             this._dictionary = new Dictionary<TKey, Grouping>(comparer);
         }
 
+        public IEqualityComparer<TKey> Comparer => this._dictionary.Comparer;
+
         public void Add(TKey key, TValue value)
         {
             (this._dictionary.TryGetValue(key, out var grouping) ? grouping : (this._dictionary[key] = new Grouping(key)))

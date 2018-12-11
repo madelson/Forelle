@@ -24,6 +24,7 @@ namespace Forelle.Tests
             QuestionMark = new Token("?"),
             Return = new Token("return"),
             Comma = new Token(","),
+            Dot = new Token("."),
             OpenBracket = new Token("["),
             CloseBracket = new Token("]"),
             OpenBrace = new Token("{"),
@@ -95,6 +96,11 @@ namespace Forelle.Tests
         public Rules(IEnumerable<Rule> rules)
             : base(rules.ToList())
         {
+        }
+
+        public Rule this[NonTerminal produced, params Symbol[] symbols]
+        {
+            get => this.Single(r => r.Produced == produced && r.Symbols.SequenceEqual(symbols));
         }
 
         public void Add(NonTerminal produced, params Symbol[] symbols)

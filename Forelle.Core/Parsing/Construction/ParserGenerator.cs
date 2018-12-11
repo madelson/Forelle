@@ -1,24 +1,33 @@
 ﻿using Medallion.Collections;
 using System;
 using System.Collections.Generic;
-using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
 
 namespace Forelle.Parsing.Construction
 {
-    // idea: prefix only gets used for ambiguity resolution. Rather than cache by prefix and therefore repeat work,
-    // we could instead cache only by node. When we retrieve a node from the cache, we can note the prefix that goes with it.
-    // When we reach an ambiguity point, we can immediately create a stub node. Later, can we flow prefixes down to all stub nodes,
-    // and then replace the stub nodes with the appropriate ambiguity resolutions? Flowing down would be looking for all paths from
-    // the top level, starting with the top-level prefix and adding on implied prefixes as we go (e. g. a prefix-parse node adds an implied prefix)
-
-    // alternatively, can we just infer the prefix(es) from the set of rules we are choosing from? We can expand out partial rules, and inline
-    // discriminators. 
-
-    // In some cases we can even use the lookahead token to further expand backwards to give more context. E. g. for dangling else,
-    // we'll be choosing between "if E then E" and "if E then E else E". We realize that else is only in the follow of the first rule in the instance
-    // where there was a surrounding if, so the full context becomes if E then if E then E else E
+    // idea: we currently have 5 ways to parse:
+    // single rule parse
+    // token switch parse
+    // common prefix parse
+    // discriminator lookahead switch
+    // discriminator prefix switch
+    //
+    // To deal with cases like in DiscriminatorExpansionEdgeCasesTest, we might need
+    // to introduce a new approach: custom discriminator prefixes that might not be differentiable (similar to common prefixes)
+    //
+    // To deal with ambiguities, we might need to refine some options, such as preventing node sharing. Alternatively, we might
+    // need to simply make sure that the ambiguity context we get back is at the same scope as the node being parsed
+    //
+    // Left recursion is currently handled via up-front transforms, but it COULD potentially be handled as a custom node type, maybe even
+    // incorporating Pratt precedence parsing. This would be very in-line with the philosophy of imitating hand-made parsers
+    //
+    // Taking this into account, we could rethink our structure to late-bind node links even more. Starting with each start node context,
+    // we can build out nodes which point to node contexts rather than nodes. The advantage of this is that it makes it easier to be more stateless
+    // and thus it makes it possible to speculate (e. g. trying several strategies for parsing and picking the one that ends up being simplest).
+    // 
+    // Once we exhaust node contexts that still require parsing, we can go through and link everything up, possibly even doing further deduplication 
+    // and other optimization that point
 
     /// <summary>
     /// Implements the core Forelle parser generation algorithm
@@ -26,6 +35,7 @@ namespace Forelle.Parsing.Construction
     internal class ParserGenerator
     {
         private readonly Dictionary<NonTerminal, IReadOnlyList<Rule>> _rulesByProduced;
+        private readonly IReadOnlyList<AmbiguityResolution> _ambiguityResolutions;
         private readonly DiscriminatorFirstFollowProviderBuilder _firstFollow;
         private readonly DiscriminatorHelper _discriminatorHelper;
         private readonly Lookup<NonTerminal, DiscriminatorContext> _discriminatorContexts = new Lookup<NonTerminal, DiscriminatorContext>();
@@ -36,10 +46,11 @@ namespace Forelle.Parsing.Construction
         private readonly Dictionary<NodeContext, ParserNode> _nodesByContext = new Dictionary<NodeContext, ParserNode>();
         private readonly Dictionary<ReferenceNode, ReferenceContext> _referenceNodeContexts = new Dictionary<ReferenceNode, ReferenceContext>();
 
-        private ParserGenerator(IReadOnlyList<Rule> rules)
+        private ParserGenerator(IReadOnlyList<Rule> rules, IEnumerable<AmbiguityResolution> ambiguityResolutions)
         {
             this._rulesByProduced = rules.GroupBy(r => r.Produced)
                 .ToDictionary(g => g.Key, g => (IReadOnlyList<Rule>)g.ToList());
+            this._ambiguityResolutions = ambiguityResolutions.ToArray();
 
             var baseFirstFollow = FirstFollowCalculator.Create(rules);
             this._firstFollow = new DiscriminatorFirstFollowProviderBuilder(baseFirstFollow);
@@ -47,9 +58,11 @@ namespace Forelle.Parsing.Construction
             this._discriminatorHelper = new DiscriminatorHelper(this._rulesByProduced, this._firstFollow);
         }
 
-        public static (Dictionary<StartSymbolInfo, ParserNode> nodes, List<string> errors) CreateParser(IReadOnlyList<Rule> rules)
+        public static (Dictionary<StartSymbolInfo, ParserNode> nodes, List<string> errors) CreateParser(
+            IReadOnlyList<Rule> rules,
+            IEnumerable<AmbiguityResolution> ambiguityResolutions)
         {
-            var generator = new ParserGenerator(rules);
+            var generator = new ParserGenerator(rules, ambiguityResolutions);
             var nodes = generator.Generate();
 
             return (nodes: nodes, errors: generator._errors);
@@ -93,7 +106,7 @@ namespace Forelle.Parsing.Construction
                 .ToArray();
 
             var ambiguityResolver = new Lazy<AmbiguityResolver>(
-                () => new AmbiguityResolver(this._rulesByProduced, this._discriminatorContexts, this._firstFollow),
+                () => new AmbiguityResolver(this._rulesByProduced, this._ambiguityResolutions, this._discriminatorContexts, this._firstFollow),
                 isThreadSafe: false
             );
 
@@ -106,10 +119,10 @@ namespace Forelle.Parsing.Construction
                 }
                 else
                 {
-                    var (rule, error) = ambiguityResolver.Value.ResolveAmbiguity(referenceContext.NodeContext.Rules, referenceContext.NodeContext.Lookahead);
-                    if (error != null)
+                    var (rule, errors) = ambiguityResolver.Value.ResolveAmbiguity(referenceContext.NodeContext.Rules, referenceContext.NodeContext.Lookahead);
+                    if (errors.Any())
                     {
-                        this._errors.Add(error);
+                        this._errors.AddRange(errors);
                     }
 
                     reference.SetValue(this.ReferenceNodeFor(rule));
@@ -192,10 +205,11 @@ namespace Forelle.Parsing.Construction
 
         private static readonly IComparer<DiscriminatorHelper.DiscriminatorPrefixSearchResult> PrefixSearchResultComparer =
             Comparers.Create((DiscriminatorHelper.DiscriminatorPrefixSearchResult r) => r.IsFollowCompatible)
+                // prefer prefixes which cover more total symbols
                 .ThenBy(Comparers.Create((DiscriminatorHelper.DiscriminatorPrefixSearchResult r) => r.RulesToDiscriminatorRuleMapping.Values.Sum(v => v.Symbols.Count)))
                 // finally, break ties by preferring root discriminators. This is useful because it keeps the follow set from growing more than
                 // is needed, thus minimizing potential issues. However, this may lead to more total child discriminators being produced
-                .ThenBy(Comparers.Create((DiscriminatorHelper.DiscriminatorPrefixSearchResult r) => ((DiscriminatorSymbolInfo)r.Discriminator.SyntheticInfo).ParentDiscriminator != null));
+                .ThenBy(Comparers.Create((DiscriminatorHelper.DiscriminatorPrefixSearchResult r) => ((DiscriminatorSymbolInfo)r.Discriminator.SyntheticInfo).ParentDiscriminator == null));
 
         private ParserNode TryCreateDiscriminatorPrefixParserNode(Token lookaheadToken, IReadOnlyList<RuleRemainder> rules)
         {
@@ -209,16 +223,15 @@ namespace Forelle.Parsing.Construction
             var bestMatch = matches.Where(r => !r.IsExactMatch || r.IsFollowCompatible)
                 .MaxBy(r => r, PrefixSearchResultComparer);
             if (bestMatch == null) { return null; }
-
+            
             if (bestMatch.IsFollowCompatible)
             {
                 this._discriminatorContexts.Add(
                     bestMatch.Discriminator,
-                    new DiscriminatorContext(
+                    new PrefixDiscriminatorContext(
                         bestMatch.RulesToDiscriminatorRuleMapping
-                            .Select(kvp => (DiscriminatorRule: kvp.Value, MappedRule: kvp.Key.Skip(kvp.Value.Symbols.Count))), 
-                        lookaheadToken, 
-                        isPrefix: true
+                            .Select(kvp => new PrefixDiscriminatorContext.RuleMapping(discriminatorRule: kvp.Value, mappedRule: kvp.Key.Skip(kvp.Value.Symbols.Count))), 
+                        lookaheadToken
                     )
                 );
 
@@ -260,14 +273,13 @@ namespace Forelle.Parsing.Construction
 
             this._discriminatorContexts.Add(
                 newDiscriminator,
-                new DiscriminatorContext(
+                new PrefixDiscriminatorContext(
                     newDiscriminatorRulesToRulesMapping
                         .SelectMany(
                             m => m.remainderMappedRules,
-                            (m, r) => (DiscriminatorRule: m.newDiscriminatorRule, MappedRule: r)
+                            (m, r) => new PrefixDiscriminatorContext.RuleMapping(discriminatorRule: m.newDiscriminatorRule, mappedRule: r)
                         ),
-                    lookaheadToken,
-                    isPrefix: true
+                    lookaheadToken
                 )
             );
 
@@ -282,49 +294,89 @@ namespace Forelle.Parsing.Construction
         
         private ParserNode TryCreateDiscriminatorLookaheadParserNode(Token lookaheadToken, IReadOnlyList<RuleRemainder> rules)
         {
+            if (rules.Any(r => r.Symbols.Count > 100))
+            {
+                // TODO rather than simply hitting this and giving up, we should be able to handle such cases by considering the creation
+                // of new prefix discriminators (as opposed to hoping that they arise "naturally"). Depending on whether we can discriminate the suffix, 
+                // we may not even need these prefixes to be true discriminators as opposed to simply "recognizers" which can look past a prefix
+                throw new NotSupportedException("# of symbols indicates infinite recursion. See DiscriminatorExpansionEdgeCasesTest for example cases");
+            }
+
             // build a mapping of what we would see after passing by lookaheadToken to the rule that that suffix would indicate
             var suffixToRuleMapping = this.TryBuildSuffixToRuleMapping(lookaheadToken, rules);
             if (suffixToRuleMapping == null) { return null; }
 
-            // TODO in the old code we looked for an equivalent existing discriminator here...
-
-            // construct a discriminator symbol
-
-            var discriminator = NonTerminal.CreateSynthetic(
-                "T" + this._rulesByProduced.Keys.Count(k => k.SyntheticInfo is DiscriminatorSymbolInfo),
-                new DiscriminatorSymbolInfo() // TODO what info goes here? suffixToRuleMapping?
-            );
-            var rulesAndFollowSets = suffixToRuleMapping.ToDictionary(
-                kvp => new Rule(discriminator, kvp.Key, kvp.Value.Rule.ExtendedInfo), 
-                kvp => this._firstFollow.FollowOf(kvp.Value.Rule)
+            var ruleSymbolsAndFollowSets = suffixToRuleMapping.ToDictionary(
+                kvp => kvp.Key,
+                kvp => this._firstFollow.FollowOf(kvp.Value.rule.Rule),
+                suffixToRuleMapping.Comparer
             );
 
-            this._rulesByProduced.Add(discriminator, rulesAndFollowSets.Keys.ToArray());
-            this._firstFollow.Add(rulesAndFollowSets);
-            this._generatorQueue.Enqueue(new NodeContext(rulesAndFollowSets.Keys.Select(r => r.Skip(0))));
+            NonTerminal discriminator;
+            IReadOnlyCollection<Rule> discriminatorRules;
+
+            // see if we already have a discriminator which can be used here
+            // first lookup to see if any discriminator has rules with the symbols we want
+            var matchingDiscriminators = this._discriminatorHelper.FindDiscriminatorByRuleSymbols(ruleSymbolsAndFollowSets.Keys);
+            var followCompatibleMatchingDiscriminators = matchingDiscriminators
+                // do not define a discriminator in terms of itself, as this would generate a parser that simply hangs.
+                // We should be safe from mutual recursion because for such cases we would have avoided creating the 
+                // mutually recursive symbol set altogether due to this check
+                .Where(s => s != rules[0].Produced)
+                // then check that each matched rule's follow set is a superset of what we computed is correct for this case
+                .Where(s => ruleSymbolsAndFollowSets.All(
+                    kvp => this._firstFollow.FollowOf(this._rulesByProduced[s].Single(r => r.Symbols.SequenceEqual(kvp.Key)))
+                        .IsSupersetOf(kvp.Value)
+                ))
+                .ToArray();
+            if (followCompatibleMatchingDiscriminators.Length > 0)
+            {
+                discriminator = followCompatibleMatchingDiscriminators[0];
+                discriminatorRules = this._rulesByProduced[discriminator].Where(r => ruleSymbolsAndFollowSets.ContainsKey(r.Symbols)).ToArray();
+            }
+            else
+            {
+                // construct a new discriminator symbol
+                discriminator = NonTerminal.CreateSynthetic(
+                    "T" + this._rulesByProduced.Keys.Count(k => k.SyntheticInfo is DiscriminatorSymbolInfo),
+                    new DiscriminatorSymbolInfo()
+                );
+                var rulesAndFollowSets = suffixToRuleMapping.ToDictionary(
+                    kvp => new Rule(discriminator, kvp.Key, kvp.Value.rule.Rule.ExtendedInfo),
+                    kvp => this._firstFollow.FollowOf(kvp.Value.rule.Rule)
+                );
+                discriminatorRules = rulesAndFollowSets.Keys;
+
+                this._rulesByProduced.Add(discriminator, rulesAndFollowSets.Keys.ToArray());
+                this._firstFollow.Add(rulesAndFollowSets);
+                this._generatorQueue.Enqueue(new NodeContext(rulesAndFollowSets.Keys.Select(r => r.Skip(0))));
+            }
 
             this._discriminatorContexts.Add(
                 discriminator,
-                new DiscriminatorContext(
-                    rulesAndFollowSets.Keys
-                        .Select(r => (DiscriminatorRule: r, MappedRule: suffixToRuleMapping[r.Symbols])),
-                    lookaheadToken,
-                    isPrefix: false
+                new PostTokenSuffixDiscriminatorContext(
+                    discriminatorRules.Select(r => new PostTokenSuffixDiscriminatorContext.RuleMapping(
+                        discriminatorRule: r, 
+                        mappedRule: suffixToRuleMapping[r.Symbols].rule,
+                        derivations: suffixToRuleMapping[r.Symbols].derivations
+                    )),
+                    lookaheadToken
                 )
             );
 
             return new GrammarLookaheadNode(
                 token: lookaheadToken,
                 discriminatorParse: this.ReferenceNodeFor(discriminator),
-                mapping: rulesAndFollowSets.Keys
-                    .Select(r => (fromRule: r, toRule: suffixToRuleMapping[r.Symbols]))
+                mapping: discriminatorRules.Select(r => (fromRule: r, toRule: suffixToRuleMapping[r.Symbols].rule))
                     .ToDictionary(t => t.fromRule, t => (t.toRule.Rule, this.ReferenceNodeFor(t.toRule)))
             );
         }
 
-        private IReadOnlyDictionary<IReadOnlyList<Symbol>, RuleRemainder> TryBuildSuffixToRuleMapping(Token lookaheadToken, IReadOnlyList<RuleRemainder> rules)
+        private Dictionary<IReadOnlyList<Symbol>, (RuleRemainder rule, IReadOnlyList<PotentialParseParentNode> derivations)> TryBuildSuffixToRuleMapping(
+            Token lookaheadToken, 
+            IReadOnlyList<RuleRemainder> rules)
         {
-            var suffixToRuleMapping = new Dictionary<IReadOnlyList<Symbol>, RuleRemainder>(EqualityComparers.GetSequenceComparer<Symbol>());
+            var suffixToRuleMapping = new Dictionary<IReadOnlyList<Symbol>, (RuleRemainder rule, IReadOnlyList<PotentialParseParentNode> derivations)>(EqualityComparers.GetSequenceComparer<Symbol>());
             foreach (var rule in rules)
             {
                 var suffixes = this._discriminatorHelper.TryGatherPostTokenSuffixes(lookaheadToken, rule);
@@ -335,13 +387,13 @@ namespace Forelle.Parsing.Construction
 
                 foreach (var suffix in suffixes)
                 {
-                    if (suffixToRuleMapping.ContainsKey(suffix))
+                    if (suffixToRuleMapping.ContainsKey(suffix.Key))
                     {
                         // in theory we could handle this case if the two rules with the same suffix
                         // have disjoint follow sets. However, this seems like it would come up rarely
                         return null;
                     }
-                    suffixToRuleMapping.Add(suffix, rule);
+                    suffixToRuleMapping.Add(suffix.Key, (rule, derivations: suffix.ToArray()));
                 }
             }
             return suffixToRuleMapping;

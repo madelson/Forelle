@@ -10,38 +10,33 @@ namespace Forelle.Parsing.Construction
     /// can be used in multiple ways (e. g. as both a prefix and a lookahead), so it can have
     /// multiple <see cref="DiscriminatorContext"/>s
     /// </summary>
-    internal sealed class DiscriminatorContext
+    internal abstract class DiscriminatorContext
     {
-        public DiscriminatorContext(
-            IEnumerable<(Rule DiscriminatorRule, RuleRemainder MappedRule)> ruleMapping,
+        protected DiscriminatorContext(
             Token lookaheadToken,
-            bool isPrefix)
+            IReadOnlyList<RuleMapping> ruleMappings)
         {
-            this.RuleMapping = (ruleMapping ?? throw new ArgumentNullException(nameof(ruleMapping)))
-                .ToArray();
             this.LookaheadToken = lookaheadToken ?? throw new ArgumentNullException(nameof(lookaheadToken));
+            this.RuleMappings = ruleMappings; // nullity validated by caller
 
-            // sanity checks
-            if (!(this.RuleMapping.Only(m => m.DiscriminatorRule.Produced.SyntheticInfo) is DiscriminatorSymbolInfo))
+            if (this.RuleMappings.Count < 2)
             {
-                throw new ArgumentException(nameof(ruleMapping), "the discriminator rule must produce a discriminator symbol");
+                throw new ArgumentException("must have at least two mappings", nameof(ruleMappings));
             }
-            if (isPrefix
-                && !this.RuleMapping.All(m => IsValidPrefixMapping(m.DiscriminatorRule, m.MappedRule)))
+            if (this.RuleMappings.Select(m => m.DiscriminatorRule.Produced).Distinct().Count() > 1)
             {
-                throw new ArgumentException(nameof(isPrefix), "all discriminator rules must be prefixes of the mapped rules");
+                throw new ArgumentException("must all map rules for the same discriminator", nameof(ruleMappings));
             }
-            this.IsPrefix = isPrefix;
         }
-        
+
         /// <summary>
-        /// The mapping between discriminator <see cref="Rule"/>s and the <see cref="Rule"/>s
+        /// The mappings between discriminator <see cref="Rule"/>s and the <see cref="Rule"/>s
         /// they discriminate between. Note that if <see cref="IsPrefix"/>, the mapped <see cref="Rule"/>
         /// will be the remainder of the rule to get parsed after the discriminator <see cref="Rule"/>
         /// has been consumed
         /// </summary>
-        public IReadOnlyList<(Rule DiscriminatorRule, RuleRemainder MappedRule)> RuleMapping { get; }
-
+        public IReadOnlyList<RuleMapping> RuleMappings { get; }
+        
         /// <summary>
         /// For an <see cref="IsPrefix"/> discriminator context, this is the next token appearing in the
         /// stream when we begin parsing the discriminator. 
@@ -50,17 +45,113 @@ namespace Forelle.Parsing.Construction
         /// the discriminator
         /// </summary>
         public Token LookaheadToken { get; }
+        
+        public abstract class RuleMapping
+        {
+            protected RuleMapping(Rule discriminatorRule, RuleRemainder mappedRule)
+            {
+                this.DiscriminatorRule = discriminatorRule ?? throw new ArgumentNullException(nameof(discriminatorRule));
+                this.MappedRule = mappedRule ?? throw new ArgumentNullException(nameof(mappedRule));
+
+                if (!(this.DiscriminatorRule.Produced.SyntheticInfo is DiscriminatorSymbolInfo))
+                {
+                    throw new ArgumentException("must produce a discriminator symbol", nameof(discriminatorRule));
+                }
+                if (this.MappedRule.Produced == this.DiscriminatorRule.Produced)
+                {
+                    throw new ArgumentException("must map to a different non-terminal");
+                }
+            }
+
+            public Rule DiscriminatorRule { get; }
+            public RuleRemainder MappedRule { get; }
+
+            public override string ToString() => $"{this.DiscriminatorRule} maps to {this.MappedRule}";
+        }
+    }
+
+    internal sealed class PostTokenSuffixDiscriminatorContext : DiscriminatorContext
+    {
+        public PostTokenSuffixDiscriminatorContext(
+            IEnumerable<RuleMapping> ruleMappings,
+            Token lookaheadToken)
+            : base(lookaheadToken, Guard.NotNullOrContainsNullAndDefensiveCopy(ruleMappings, nameof(ruleMappings)))
+        {
+            foreach (var ruleMapping in ruleMappings)
+            {
+                foreach (var derivation in ruleMapping.Derivations)
+                {
+                    if (derivation.GetLeafAtCursorPosition().Symbol != lookaheadToken)
+                    {
+                        throw new ArgumentException($"invalid expansion path {string.Join(" -> ", derivation)}: must end with the lookahead token", nameof(ruleMappings));
+                    }
+                }
+            }
+        }
+
+        public new IReadOnlyList<RuleMapping> RuleMappings => (IReadOnlyList<RuleMapping>)base.RuleMappings;
+
+        public new sealed class RuleMapping : DiscriminatorContext.RuleMapping
+        {
+            public RuleMapping(
+                Rule discriminatorRule,
+                RuleRemainder mappedRule,
+                IEnumerable<PotentialParseParentNode> derivations)
+                : base(discriminatorRule, mappedRule)
+            {
+                this.Derivations = derivations?.ToArray() ?? throw new ArgumentNullException(nameof(derivations));
+                
+                if (this.Derivations.Count == 0) { throw new ArgumentException("must not be empty", nameof(derivations)); }
+                foreach (var derivation in this.Derivations)
+                {
+                    if (derivation.Rule != this.MappedRule.Rule) { throw new ArgumentException("invalid derivation root", nameof(derivations)); }
+                }
+            }
+            
+            public IReadOnlyList<PotentialParseParentNode> Derivations { get; }
+        }
+    }
+
+    internal sealed class PrefixDiscriminatorContext : DiscriminatorContext
+    {
+        public PrefixDiscriminatorContext(
+            IEnumerable<RuleMapping> ruleMappings,
+            Token lookaheadToken)
+            : base(lookaheadToken, Guard.NotNullOrContainsNullAndDefensiveCopy(ruleMappings, nameof(ruleMappings)))
+        {
+        }
+
+        public new IReadOnlyList<RuleMapping> RuleMappings => (IReadOnlyList<RuleMapping>)base.RuleMappings;
 
         /// <summary>
-        /// Specifies whether the discriminator is being used as a prefix of another discriminator
+        /// The mapped <see cref="Rule"/> will be the remainder of the rule to 
+        /// get parsed after the discriminator <see cref="Rule"/> has been consumed
         /// </summary>
-        public bool IsPrefix { get; }
-
-        private static bool IsValidPrefixMapping(Rule discriminatorRule, RuleRemainder mappedRule)
+        public new sealed class RuleMapping : DiscriminatorContext.RuleMapping
         {
-            return mappedRule.Rule.Skip(mappedRule.Start - discriminatorRule.Symbols.Count).Symbols
-                .Take(discriminatorRule.Symbols.Count)
-                .SequenceEqual(discriminatorRule.Symbols);
+            public RuleMapping(Rule discriminatorRule, RuleRemainder mappedRule)
+                : base(discriminatorRule, mappedRule)
+            {
+                if (!(mappedRule.Produced.SyntheticInfo is DiscriminatorSymbolInfo))
+                {
+                    throw new ArgumentException("prefix rule mapping must map to a discriminator rule");
+                }
+
+                if (!IsValidPrefixMapping(discriminatorRule, mappedRule))
+                {
+                    throw new ArgumentException("discriminator rule must be a prefix of the mapped rule", nameof(discriminatorRule));
+                }
+            }
+
+            private static bool IsValidPrefixMapping(Rule discriminatorRule, RuleRemainder mappedRule)
+            {
+                // in the prefix case, discriminatorRule forms a prefix of mappedRule.Rule, where mappedRule itself
+                // is a REMAINDER following the prefix
+
+                return mappedRule.Rule.Skip(mappedRule.Start - discriminatorRule.Symbols.Count).Symbols
+                    .Take(discriminatorRule.Symbols.Count)
+                    .SequenceEqual(discriminatorRule.Symbols);
+            }
         }
     }
 }

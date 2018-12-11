@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.Text;
 using System.Linq;
-using Medallion.Collections;
 
 namespace Forelle.Parsing.Preprocessing
 {
@@ -46,7 +45,7 @@ namespace Forelle.Parsing.Preprocessing
 
             // check for duplicate rules
             // NOTE: we could relax this if the same rule is specified multiple times with different constraints
-            var symbolsComparer = EqualityComparers.GetSequenceComparer<Symbol>();
+            var symbolsComparer = Medallion.Collections.EqualityComparers.GetSequenceComparer<Symbol>();
             results.AddRange(
                 rulesByProduced.SelectMany(g => g.GroupBy(gg => gg.Symbols, symbolsComparer))
                     .Where(g => g.Count() > 1)

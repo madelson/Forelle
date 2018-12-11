@@ -31,8 +31,14 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="ImmutableLinkedList, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\packages\ImmutableLinkedList.1.0.0\lib\net45\ImmutableLinkedList.dll</HintPath>
+    </Reference>
     <Reference Include="MedallionCollections, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <HintPath>..\packages\MedallionCollections.1.1.0\lib\net45\MedallionCollections.dll</HintPath>
+    </Reference>
+    <Reference Include="MedallionPriorityQueue, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\packages\MedallionPriorityQueue.1.1.0\lib\net45\MedallionPriorityQueue.dll</HintPath>
     </Reference>
     <Reference Include="nunit.framework, Version=3.7.0.0, Culture=neutral, PublicKeyToken=2638cd05610744eb, processorArchitecture=MSIL">
       <HintPath>..\packages\NUnit.3.7.0\lib\net45\nunit.framework.dll</HintPath>
@@ -55,6 +61,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Parsing\Construction\AmbiguousGrammarParserGeneratorTest.cs" />
+    <Compile Include="Parsing\Construction\DiscriminatorExpansionEdgeCasesTest.cs" />
     <Compile Include="Parsing\Construction\DiscriminatorHelperTest.cs" />
     <Compile Include="Parsing\Construction\ImmutableTrieTest.cs" />
     <Compile Include="Parsing\Construction\LargeGrammarTest.cs" />

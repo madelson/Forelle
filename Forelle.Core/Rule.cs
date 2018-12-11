@@ -8,6 +8,7 @@ namespace Forelle
 {
     public sealed class Rule
     {
+        // todo could put stuff relevant to this in a separate partial file
         private RuleRemainder[] _cachedRuleRemainders;
 
         public Rule(NonTerminal produced, params Symbol[] symbols)
@@ -124,9 +125,9 @@ namespace Forelle
                 parserStateActions != null
                     ? new ReadOnlyCollection<ParserStateVariableAction>(parserStateActions.Select(a => a ?? throw new ArgumentException("must not contain null", nameof(parserStateActions))).ToArray())
                     : this.ParserStateActions,
-                mappedRules.HasValue
-                    ? mappedRules.Value != null 
-                        ? new ReadOnlyCollection<Rule>(mappedRules.Value.Select(r => r ?? throw new ArgumentException("must not contain null", nameof(mappedRules))).ToArray())
+                mappedRules.TryGetValue(out var mappedRulesValue)
+                    ? mappedRulesValue != null 
+                        ? new ReadOnlyCollection<Rule>(mappedRulesValue.Select(r => r ?? throw new ArgumentException("must not contain null", nameof(mappedRules))).ToArray())
                         : null
                     : this.MappedRules
              );

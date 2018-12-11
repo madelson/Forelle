@@ -1,5 +1,4 @@
-﻿using Medallion.Collections;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -114,7 +113,7 @@ namespace Forelle.Parsing.Preprocessing
                     new[]
                     {
                         // E -> T List<+T>
-                        new Rule(leftRecursiveRule.Produced, new[] { remainderSymbol, suffixListSymbol }, leftRecursiveRule.ExtendedInfo.Update(mappedRules: Empty.Array<Rule>()))
+                        new Rule(leftRecursiveRule.Produced, new[] { remainderSymbol, suffixListSymbol }, leftRecursiveRule.ExtendedInfo.Update(mappedRules: Array.Empty<Rule>()))
                     }
                 );
 
