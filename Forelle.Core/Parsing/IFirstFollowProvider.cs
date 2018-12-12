@@ -17,7 +17,7 @@ namespace Forelle.Parsing
     {
         public static bool IsNullable(this IFirstFollowProvider provider, Symbol symbol)
         {
-            return symbol is NonTerminal && provider.FirstOf(symbol).ContainsNull();
+            return symbol is NonTerminal && provider.FirstOf(symbol).Contains(null);
         }
 
         public static ImmutableHashSet<Token> FirstOf(this IFirstFollowProvider provider, IEnumerable<Symbol> symbols)
@@ -27,7 +27,7 @@ namespace Forelle.Parsing
             {
                 var firsts = provider.FirstOf(symbol);
                 builder.UnionWith(firsts.Where(s => s != null));
-                if (!firsts.ContainsNull())
+                if (!firsts.Contains(null))
                 {
                     // not nullable
                     return builder.ToImmutable();
@@ -35,7 +35,7 @@ namespace Forelle.Parsing
             }
 
             // if we reach here, we're nullable
-            return builder.ToImmutable().AddNull();
+            return builder.ToImmutable().Add(null);
         }
 
         public static ImmutableHashSet<Token> NextOf(this IFirstFollowProvider provider, Rule rule)
@@ -46,8 +46,8 @@ namespace Forelle.Parsing
         public static ImmutableHashSet<Token> NextOf(this IFirstFollowProvider provider, RuleRemainder ruleRemainder)
         {
             var firsts = provider.FirstOf(ruleRemainder.Symbols);
-            return firsts.ContainsNull()
-                ? firsts.RemoveNull().Union(provider.FollowOf(ruleRemainder.Rule))
+            return firsts.Contains(null)
+                ? firsts.Remove(null).Union(provider.FollowOf(ruleRemainder.Rule))
                 : firsts;
         }
     }

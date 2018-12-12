@@ -65,7 +65,7 @@ namespace Forelle.Tests.Parsing
                 .CollectionShouldEqual(new[] { ArgList });
 
             firstFollow.FirstOf(new Symbol[] { ArgList, Return, SemiColon })
-                .CollectionShouldEqual(firstFollow.FirstOf(ArgList).RemoveNull().Union(firstFollow.FirstOf(Return)));
+                .CollectionShouldEqual(firstFollow.FirstOf(ArgList).Remove(null).Union(firstFollow.FirstOf(Return)));
 
             firstFollow.NextOf(rules.Single(r => r.Produced == Exp && r.Symbols.SequenceEqual(new[] { Id })))
                 .CollectionShouldEqual(new[] { Id });
@@ -76,7 +76,7 @@ namespace Forelle.Tests.Parsing
             firstFollow.NextOf(new RuleRemainder(argListTailRule, start: 1))
                 .CollectionShouldEqual(new[] { Comma });
             firstFollow.NextOf(new RuleRemainder(argListTailRule, start: 2))
-                .CollectionShouldEqual(firstFollow.FirstOf(ArgList).RemoveNull().Union(firstFollow.FollowOf(ArgList)));
+                .CollectionShouldEqual(firstFollow.FirstOf(ArgList).Remove(null).Union(firstFollow.FollowOf(ArgList)));
             firstFollow.NextOf(new RuleRemainder(argListTailRule, start: 3))
                 .CollectionShouldEqual(firstFollow.FollowOf(ArgList));
         }

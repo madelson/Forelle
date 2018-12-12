@@ -259,7 +259,7 @@ namespace Forelle.Parsing.Construction
                 // finally, if the symbol is nullable, we consider the case where it produces null and the 
                 // lookahead appears after it. In this case we create a new expansion path that moves the start pointer
                 // on the current rule forwards
-                return this._firstFollowProvider.FirstOf(nonTerminal).ContainsNull()
+                return this._firstFollowProvider.FirstOf(nonTerminal).Contains(null)
                     // if the current symbol is nullable, then we also have to succeed in the expansion that skips that
                     // symbol. If we do succeed in this, then it's ok if some of our other expansions failed. Really the only
                     // failures that matter are when we exhaust the symbols in the current rule AND the suffix is empty

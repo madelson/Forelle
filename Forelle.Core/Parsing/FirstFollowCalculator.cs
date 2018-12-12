@@ -109,7 +109,7 @@ namespace Forelle.Parsing
                             }
 
                             // if the symbol j is non-nullable, stop
-                            if (!followingFirstSet.ContainsNull())
+                            if (!followingFirstSet.Contains(null))
                             {
                                 foundNonNullableFollowingSymbol = true;
                                 break;
