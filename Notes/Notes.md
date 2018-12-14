@@ -1,0 +1,1 @@
+Interesting article on good parser generator properties & error handling: https://matklad.github.io/2018/06/06/modern-parser-generator.html
