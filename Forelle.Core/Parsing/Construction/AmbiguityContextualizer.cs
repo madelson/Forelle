@@ -119,12 +119,19 @@ namespace Forelle.Parsing.Construction
 
             if (mappingEntry.isPrefix)
             {
+                // we have a mapping like T0 => x maps to T1 => ... y. Therefore we have ... symbols
+                // to put in, followed by symbols from the prefix discriminator, followed by any symbols in the 
+                // mapped rule that follow the prefix
+                var prePrefixSymbolCount = mappedRule.Start - mappingEntry.from.Symbols.Count;
                 var adjustedNode = new PotentialParseParentNode(
                         mappedRule.Rule,
-                        discriminatorNode.Children.Select(ch => ch.WithoutCursor())
+                        mappedRule.Rule.Symbols.Take(mappedRule.Start - mappingEntry.from.Symbols.Count)
+                            .Select(s => new PotentialParseLeafNode(s))
+                            .Concat(discriminatorNode.Children.Select(ch => ch.WithoutCursor()))
                             .Concat(mappedRule.Symbols.Select(s => new PotentialParseLeafNode(s)))
                     )
-                    .WithCursor(discriminatorNode.CursorPosition.Value);
+                    // reset the cursor in case it was trailing; it may no longer be!
+                    .WithCursor(prePrefixSymbolCount + discriminatorNode.CursorPosition.Value);
 
                 // for a prefix, just expand
                 var prefixResult = this.ExpandDiscriminatorContexts(
