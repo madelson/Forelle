@@ -9,6 +9,9 @@ using ParseTreePath = Medallion.Collections.ImmutableLinkedList<(Forelle.Parsing
 
 namespace Forelle.Parsing.Construction
 {
+    // todo this code currently doesn't take advantage of the cursor at all, but that could really help by narrowing the
+    // possibilities!
+
     /// <summary>
     /// The <see cref="AmbiguityContextUnifier"/>'s job is to take two or more <see cref="PotentialParseNode"/>s representing
     /// ambiguous points in a grammar and attempt to "unify" them. That means performing grammatically-valid transformations on
