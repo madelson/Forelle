@@ -227,6 +227,44 @@ namespace Forelle.Tests.Parsing.Construction
 
             // todo idea: rather than doing lookback to fix, what if we went back and forced a discriminator rather than a prefix for E -> T - E vs. E -> T?
         }
+        
+        [Test]
+        public void TestGenericMethodCallAmbiguity()
+        {
+            // this test replicates the C# ambiguity with generic method calls:
+            // f(g<h, i>(j)) could either be invoking g<h, i> passing in j or
+            // calling f passing in g<h and i>(j)
+
+            var name = new NonTerminal("Name");
+            var argList = new NonTerminal("List<Exp>");
+            var genericParameters = new NonTerminal("GenPar");
+            var cmp = new NonTerminal("Cmp");
+
+            var rules = new Rules
+            {
+                { Exp, Id },
+                { Exp, LeftParen, Exp, RightParen },
+                { Exp, Id, cmp, Exp },
+                { Exp, name, LeftParen, argList, RightParen },
+
+                { cmp, LessThan },
+                { cmp, GreaterThan },
+
+                { argList, Exp },
+                { argList, Exp, Comma, argList },
+
+                { name, Id },
+                { name, Id, LessThan, genericParameters, GreaterThan },
+                
+                { genericParameters, Id },
+                { genericParameters, Id, Comma, genericParameters },
+            };
+
+            Assert.Fail("unification is too slow for this right now");
+            //var (parser, errors) = ParserGeneratorTest.CreateParser(rules);
+            //Console.WriteLine(string.Join(Environment.NewLine, errors));
+            //Assert.Fail("not done");
+        }
 
         /// <summary>
         /// This test demonstrates handling of an unambiguous grammar which we can't handle. Because
