@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Linq;
 
 namespace Forelle
 {
@@ -34,18 +35,10 @@ namespace Forelle
 
         public static T As<T>(this T @this) => @this;
 
-        // todo remove if not needed
-        public static IEqualityComparer<(T1, T2)> CreateTupleComparer<T1, T2>(
-            IEqualityComparer<T1> comparer1 = null,
-            IEqualityComparer<T2> comparer2 = null)
+        public static void Deconstruct<TKey, TValue>(this KeyValuePair<TKey, TValue> keyValuePair, out TKey key, out TValue value)
         {
-            var comparer1ToUse = comparer1 ?? EqualityComparer<T1>.Default;
-            var comparer2ToUse = comparer2 ?? EqualityComparer<T2>.Default;
-            return EqualityComparers.Create<(T1, T2)>(
-                equals: (a, b) => comparer1ToUse.Equals(a.Item1, b.Item1)
-                    && comparer2ToUse.Equals(a.Item2, b.Item2),
-                hash: t => (comparer1ToUse.GetHashCode(t.Item1), comparer2ToUse.GetHashCode(t.Item2)).GetHashCode()
-            );
+            key = keyValuePair.Key;
+            value = keyValuePair.Value;
         }
     }
 }

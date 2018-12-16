@@ -115,13 +115,13 @@ namespace Forelle.Parsing.Construction
                 .ToList();
 
             var mapping = new Dictionary<RuleRemainder, Rule>(capacity: ruleMatches.Count);
-            foreach (var kvp in ruleMatches) // ruleMatches implies PREFIX constraint
+            foreach (var (rule, matches) in ruleMatches) // ruleMatches implies PREFIX constraint
             {
                 // LONGEST-PREFIX constraint
-                var bestMappedRule = kvp.Value.Where(validDiscriminatorRules.Contains)
+                var bestMappedRule = matches.Where(validDiscriminatorRules.Contains)
                     .MaxBy(r => r.Symbols.Count);
                 if (bestMappedRule == null) { return null; }
-                mapping.Add(kvp.Key, bestMappedRule);
+                mapping.Add(rule, bestMappedRule);
             }
 
             // MANY-TO-MANY constraint

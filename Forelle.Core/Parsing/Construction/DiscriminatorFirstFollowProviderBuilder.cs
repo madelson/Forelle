@@ -34,10 +34,10 @@ namespace Forelle.Parsing.Construction
             }
 
             var firstSetBuilder = ImmutableHashSet.CreateBuilder<Token>();
-            foreach (var kvp in symbolRulesAndFollowSets)
+            foreach (var (rule, followSet) in symbolRulesAndFollowSets)
             {
-                firstSetBuilder.UnionWith(this.FirstOf(kvp.Key.Symbols));
-                this._addedFollowSets.Add(kvp.Key, kvp.Value);
+                firstSetBuilder.UnionWith(this.FirstOf(rule.Symbols));
+                this._addedFollowSets.Add(rule, followSet);
             }
 
             this._addedFirstSets.Add(produced, firstSetBuilder.ToImmutable());
