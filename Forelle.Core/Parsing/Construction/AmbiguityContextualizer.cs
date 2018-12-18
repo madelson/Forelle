@@ -159,7 +159,7 @@ namespace Forelle.Parsing.Construction
             // in most cases, expanded will incorporate the cursor automatically because one of
             // nodesToIncorporate will have it. The exception is when discriminatorNode has zero children
             // AND a trailing cursor. Thus, we add it if needed (WithTrailingCursor is a noop if expanded
-            // already has the trailing cursor
+            // already has the trailing cursor)
             var result = discriminatorNode.HasTrailingCursor()
                 ? (PotentialParseParentNode)expanded.WithTrailingCursor()
                 : expanded;
