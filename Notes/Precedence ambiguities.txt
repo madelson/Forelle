@@ -12,3 +12,11 @@ Here a and b aren't necessarily single tokens, just equivalent (wrt aliases) sym
 Note that there are related ambiguities where the "a" in each rule aren't obviously equivalent but can parse the same symbol sequence; let's ignore these for now.
 
 The question is: can we (a) discover all such ambiguities and (b) perform a grammar rewrite to address them, like we do for left-recursive rules?
+
+The challenge of tackling precedence ambiguities through other means is that the decision about what to do (shift vs. reduce) is contextual which messes with the interpretation of the ambiguity context. For example, let's say we have our cast precedence grammar and we're confused about:
+E -> T - E
+E -> T
+After parsing T and seeing a "-" ahead: we can shift the "-" for the first rule or reduce for the second rule. Here are the contexts we get:
+E(T - E)
+E(T(C("(" ID ")" E(T))) - E)
+Note that the first context is a generalization of the second! As a result, when we unify, we easily get the same parse; to get different parses, we need to outer-expand the top context to add a cast outside, which makes us prefer the bottom (reduce). The problem is that we SHOULD prefer shift IF POSSIBLE in this scenario
