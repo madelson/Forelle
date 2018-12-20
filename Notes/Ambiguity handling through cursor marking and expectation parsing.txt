@@ -1,0 +1,11 @@
+This is a resolution approach idea that spawned from the consideration of precedence ambiguities. The idea is that sometimes we hit the same token decision point and we need to make different decisions.
+
+In a world where the parser always knows what it is doing, then the challenge is remembering what we decided in outer contexts and propagating to a nested context. So, in cast precedence, if we're parsing E and we see:
+
+( ID ) ID - ID
+
+We should be able to decide E -> T - E is the rule we're taking. The problem is that we start parsing T, eat the "( ID )" as a cast, and then are reconsidering an E parse at index 3 (ID). Once again we must choose between E -> T and E -> T - E, on the same "-" symbol, but now we must make a different decision than previously!
+
+One way we could do this is if, on our initial outer lookahead, we marked that decision point to note that the first T must end before the "-". Then, in our inner decision point, we could rule out E -> T - E because that "-" is claimed by an outer context. 
+
+This is similar to the idea of expectation parsing, where we are always adding to a stack of what we expect to see after the current nested parse and can use that stack to rule out certain options. For example in the palindrome grammar (E -> aEa, E -> empty), we can't ever decide what to do when we see an "a". In the expectation world, our initial expectation is just End<E> so we know that we have to pick E -> aEa. Once we pick that rule, we eat the a, then push a onto the expectation and parse E again. Now let's say we see another a: we can check our approach by considering the current expectation of a, End<E>. If that's what we match right now, then we should do E -> empty. Otherwise, we should do E -> aEa and push another a.
