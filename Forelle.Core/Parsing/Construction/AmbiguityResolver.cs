@@ -35,47 +35,42 @@ namespace Forelle.Parsing.Construction
             this._unifier = new AmbiguityContextUnifier(rulesByProduced, firstFollowProvider);
         }
 
-        public (RuleRemainder Rule, string[] Errors) ResolveAmbiguity(IReadOnlyList<RuleRemainder> rules, Token lookaheadToken)
+        public (AmbiguityCheck[] Checks, string[] Errors) ResolveAmbiguity(IReadOnlyList<RuleRemainder> rules, Token lookaheadToken)
         {
             var contexts = this._contextualizer.GetExpandedAmbiguityContexts(rules, lookaheadToken);
 
-            var unifiedContexts = contexts.Select(c =>
-                {
-                    var contextArray = c.ToArray();
-                    return this._unifier.TryUnify(contextArray.Select(kvp => kvp.Value).ToArray(), out var unified)
-                        ? (
-                            context: contextArray.Select((kvp, i) => (rule: kvp.Key, node: unified[i]))
-                                .ToDictionary(t => t.rule, t => t.node),
-                            unified: true
-                        )
-                        : (context: c, unified: false);
-                })
+            var checksAndErrors = contexts.Select(c => this.ResolveAmbiguity(rules, c)).ToArray();
+
+            return (
+                checksAndErrors.SelectMany(t => t.Checks).ToArray(),
+                checksAndErrors.Select(t => t.Error).Where(e => e != null).ToArray()
+            );
+        }
+
+        private (AmbiguityCheck[] Checks, string Error) ResolveAmbiguity(
+            IReadOnlyList<RuleRemainder> rules,
+            IReadOnlyDictionary<RuleRemainder, PotentialParseNode> ambiguityContext)
+        {
+            var unified = this._unifier.TryUnify(rules.Select(r => ambiguityContext[r]).ToArray(), out var unifieds)
+                ? rules.Select((rule, index) => (rule, index)).ToDictionary(t => t.rule, t => unifieds[t.index])
+                : null;
+
+            var resolutionContexts = rules.ToDictionary(r => r, r => unified?[r] ?? ambiguityContext[r]);
+            var resolution = this._ambiguityResolutions.TryGetValue(resolutionContexts.Values, out var match) ? match : null;
+
+            var reverseOrderedRules = rules.OrderByDescending(
+                    r => resolution?.OrderedParses.IndexWhere(p => PotentialParseNode.Comparer.Equals(p, resolutionContexts[r]))
+                )
+                .ToArray();
+            var checks = reverseOrderedRules
+                .Select((r, index) => new AmbiguityCheck((PotentialParseParentNode)ambiguityContext[r], mappedRule: r, priority: index))
                 .ToArray();
 
-            var contextsWithResolutions = unifiedContexts
-                .Select(c => (c.context, c.unified, resolution: this._ambiguityResolutions.TryGetValue(c.context.Values, out var resolution) ? resolution : null))
-                .ToArray();
+            var error = resolution == null
+                ? ToAmbiguityError(resolutionContexts, unified: unified != null)
+                : null;
 
-            if (contextsWithResolutions.Any(c => c.resolution == null))
-            {
-                return (
-                    Rule: rules[0],
-                    Errors: contextsWithResolutions.Select(c => ToAmbiguityError(c.context, c.unified)).ToArray()
-                );
-            }
-
-            var preferredRules = contextsWithResolutions.Select(c => c.context.Single(kvp => PotentialParseNode.Comparer.Equals(kvp.Value, c.resolution.PreferredParse)).Key)
-                .ToArray();
-
-            if (preferredRules.Distinct().Count() != 1)
-            {
-                return (
-                    Rule: rules[0],
-                    Errors: new[] { "conflicting ambiguity resolutions TODO cleanup" }
-                );
-            }
-
-            return (Rule: preferredRules[0], Errors: Array.Empty<string>());
+            return (checks, error);
         }
 
         private static string ToAmbiguityError(IReadOnlyDictionary<RuleRemainder, PotentialParseNode> context, bool unified)

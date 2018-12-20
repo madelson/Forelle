@@ -110,6 +110,7 @@ namespace Forelle.Parsing.Construction
                 isThreadSafe: false
             );
 
+            var allChecks = new List<AmbiguityCheck>();
             foreach (var reference in allReferences)
             {
                 var referenceContext = this._referenceNodeContexts[reference];
@@ -119,14 +120,33 @@ namespace Forelle.Parsing.Construction
                 }
                 else
                 {
-                    var (rule, errors) = ambiguityResolver.Value.ResolveAmbiguity(referenceContext.NodeContext.Rules, referenceContext.NodeContext.Lookahead);
+                    var (checks, errors) = ambiguityResolver.Value.ResolveAmbiguity(referenceContext.NodeContext.Rules, referenceContext.NodeContext.Lookahead);
                     if (errors.Any())
                     {
                         this._errors.AddRange(errors);
                     }
 
-                    reference.SetValue(this.ReferenceNodeFor(rule));
+                    allChecks.AddRange(checks);
+
+                    var ambiguityResolutionNode = new AmbiguityResolutionNode(
+                        checks.ToDictionary(c => c, c => this.ReferenceNodeFor(c.MappedRule))
+                    );
+                    reference.SetValue(ambiguityResolutionNode);
                 }
+            }
+
+            foreach (var check in allChecks)
+            {
+                var symbolReference = this.ReferenceNodeFor(check.Context.Symbol);
+                var symbolNode = symbolReference is ReferenceNode reference ? reference.Value : symbolReference;
+                symbolNode.AmbiguityChecks.Add((
+                    check,
+                    check.Context.Leaves.Select(n => n.Symbol)
+                        .OfType<NonTerminal>()
+                        .Distinct()
+                        .Select(s => (symbol: s, node: this.ReferenceNodeFor(s)))
+                        .ToDictionary(t => t.symbol, t => t.node is ReferenceNode @ref ? @ref.Value : t.node)
+                ));
             }
         }
 

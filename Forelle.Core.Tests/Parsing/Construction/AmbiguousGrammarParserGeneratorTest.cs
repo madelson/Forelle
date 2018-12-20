@@ -216,11 +216,12 @@ namespace Forelle.Tests.Parsing.Construction
             // where it shouldn't be (which shuts off other valid parsing paths). In contrast, had we worked through
             // that symbol set via a set of discriminators we'd be in a good place because we'd be applying our
             // ambiguity context to a very specific scenario
-            parser.Parse(new[] { Id, Minus, Id }, Exp);
+            
+            //parser.Parse(new[] { Id, Minus, Id }, Exp); // TODO restore!!!
 
-            //parser.Parse(new[] { LeftParen, Id, RightParen, Id, Minus, Id }, Exp);
-            //ParserGeneratorTest.ToGroupedTokenString(parser.Parsed)
-            //    .ShouldEqual("((( ID ) ID) - ID)");
+            parser.Parse(new[] { LeftParen, Id, RightParen, Id, Minus, Id }, Exp);
+            ParserGeneratorTest.ToGroupedTokenString(parser.Parsed)
+                .ShouldEqual("((( ID ) ID) - ID)");
 
             // todo what if we resolve the other way?
             // todo would be nice to express resolutions as strings in tests...
@@ -260,8 +261,8 @@ namespace Forelle.Tests.Parsing.Construction
                 { genericParameters, Id, Comma, genericParameters },
             };
 
-            Assert.Fail("unification is too slow for this right now");
-            //var (parser, errors) = ParserGeneratorTest.CreateParser(rules);
+            //Assert.Fail("unification is too slow for this right now");
+            var (parser, errors) = ParserGeneratorTest.CreateParser(rules);
             //Console.WriteLine(string.Join(Environment.NewLine, errors));
             //Assert.Fail("not done");
         }

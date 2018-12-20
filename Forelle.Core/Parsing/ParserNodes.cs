@@ -16,6 +16,43 @@ namespace Forelle.Parsing
     internal abstract class ParserNode
     {
         public virtual IReadOnlyList<ParserNode> ChildNodes => Empty.ReadOnlyList<ParserNode>();
+
+        // todo not a great design...
+        public List<(AmbiguityCheck Check, IReadOnlyDictionary<NonTerminal, ParserNode> NonTerminalParsers)> AmbiguityChecks = new List<(AmbiguityCheck Check, IReadOnlyDictionary<NonTerminal, ParserNode> NonTerminalParsers)>();
+    }
+
+    internal class AmbiguityResolutionNode : ParserNode
+    {
+        public AmbiguityResolutionNode(IReadOnlyDictionary<AmbiguityCheck, ParserNode> checksToNodes)
+        {
+            this.ChecksToNodes = checksToNodes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+        }
+
+        public IReadOnlyDictionary<AmbiguityCheck, ParserNode> ChecksToNodes { get; }
+    }
+
+    internal class AmbiguityCheck
+    {
+        public AmbiguityCheck(
+            PotentialParseParentNode context,
+            RuleRemainder mappedRule,
+            int priority)
+        {
+            this.Context = context ?? throw new ArgumentNullException(nameof(context));
+            this.MappedRule = mappedRule ?? throw new ArgumentNullException(nameof(mappedRule));
+            this.Priority = priority;
+            
+            if (!this.Context.Leaves.Any(l => l.Symbol is Token && l.CursorPosition == 0))
+            {
+                throw new ArgumentException("Must have a leaf marked with the cursor", nameof(context));
+            }
+        }
+        
+        public PotentialParseParentNode Context { get; }
+        public RuleRemainder MappedRule { get; }
+        public int Priority { get; }
+        
+        public override string ToString() => $"{this.Context}: PRIORITY {this.Priority}";
     }
 
     internal sealed class ParseRuleNode : ParserNode

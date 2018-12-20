@@ -16,13 +16,11 @@ namespace Forelle.Parsing
             if (this.OrderedParses.Count == 0) { throw new ArgumentException("must not be empty", nameof(orderedParses)); }
         }
 
-        public AmbiguityResolution(PotentialParseNode preferedParse, PotentialParseNode alternateParse, params PotentialParseNode[] alternateParses)
-            : this(new[] { preferedParse, alternateParse }.Concat(alternateParses ?? throw new ArgumentNullException(nameof(alternateParses))))
+        public AmbiguityResolution(PotentialParseNode firstParse, PotentialParseNode secondParse, params PotentialParseNode[] additionalOrderedParses)
+            : this(new[] { firstParse, secondParse }.Concat(additionalOrderedParses ?? throw new ArgumentNullException(nameof(additionalOrderedParses))))
         {
         }
 
         public ReadOnlyCollection<PotentialParseNode> OrderedParses { get; }
-
-        internal PotentialParseNode PreferredParse => this.OrderedParses[0];
     }
 }

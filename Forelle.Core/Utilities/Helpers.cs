@@ -40,5 +40,23 @@ namespace Forelle
             key = keyValuePair.Key;
             value = keyValuePair.Value;
         }
+
+        public static int IndexWhere<TSource>(this IEnumerable<TSource> source, Func<TSource, bool> predicate)
+        {
+            if (source == null) { throw new ArgumentNullException(nameof(source)); }
+            if (predicate == null) { throw new ArgumentNullException(nameof(predicate)); }
+
+            var index = 0;
+            foreach (var item in source)
+            {
+                if (predicate(item))
+                {
+                    return index;
+                }
+                ++index;
+            }
+
+            return -1;
+        }
     }
 }

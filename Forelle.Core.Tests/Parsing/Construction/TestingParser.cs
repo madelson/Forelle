@@ -18,6 +18,7 @@ namespace Forelle.Tests.Parsing.Construction
 
         private int _index, _lookaheadIndex;
         private readonly Stack<SyntaxNode> _syntaxNodes = new Stack<SyntaxNode>();
+        private readonly Dictionary<int, Stack<AmbiguityCheck>> _ambiguityCheckResults = new Dictionary<int, Stack<AmbiguityCheck>>();
 
         public TestingParser(IReadOnlyDictionary<StartSymbolInfo, ParserNode> rootNodes)
         {
@@ -35,6 +36,7 @@ namespace Forelle.Tests.Parsing.Construction
             this._index = 0;
             this._lookaheadIndex = -1;
             this._syntaxNodes.Clear();
+            this._ambiguityCheckResults.Clear();
 
             this.Parse(this._rootNodes[startSymbolInfo]);
 
@@ -47,6 +49,30 @@ namespace Forelle.Tests.Parsing.Construction
         }
 
         private Rule Parse(ParserNode node)
+        {
+            List<int> checksAdded = null;
+            foreach (var (ambiguityCheck, nonTerminalParsers) in node.AmbiguityChecks)
+            {
+                if (this.RunAmbiguityCheck(ambiguityCheck, nonTerminalParsers) is int index)
+                {
+                    (checksAdded ?? (checksAdded = new List<int>())).Add(index);
+                }
+            }
+
+            var result = this.ParseNoAmbiguityChecks(node);
+
+            if (checksAdded != null)
+            {
+                foreach (var index in checksAdded)
+                {
+                    this._ambiguityCheckResults[index].Pop();
+                }
+            }
+
+            return result;
+        }
+
+        private Rule ParseNoAmbiguityChecks(ParserNode node)
         {
             switch (node)
             {
@@ -113,6 +139,18 @@ namespace Forelle.Tests.Parsing.Construction
                     if (!this.IsInLookahead) { throw new InvalidOperationException($"Encountered {mapResultNode} outside of lookahead"); }
                     var innerResult = this.Parse(mapResultNode.Mapped);
                     return this.Parse(mapResultNode.Mapping[innerResult]);
+                case AmbiguityResolutionNode ambiguityResolutionNode:
+                    var index = this.IsInLookahead ? this._lookaheadIndex : this._index;
+                    if (!this._ambiguityCheckResults.TryGetValue(index, out var checkResults))
+                    {
+                        throw new InvalidOperationException($"No ambiguity check results found at {index}!");
+                    }
+                    var orderedCheckResults = checkResults.Where(ambiguityResolutionNode.ChecksToNodes.ContainsKey)
+                        .OrderByDescending(c => c.Priority)
+                        .ToArray();
+                    Log($"FOUND {orderedCheckResults.Length} CHECK RESULTS @{(this.IsInLookahead ? "L" : string.Empty)}{index}; USING {orderedCheckResults[0]}");
+                    if (orderedCheckResults.Length == 0) { throw new InvalidOperationException("No relevant check results"); }
+                    return this.Parse(ambiguityResolutionNode.ChecksToNodes[orderedCheckResults[0]]);
                 default:
                     throw new InvalidOperationException("Unexpected node " + node.GetType());
             }
@@ -177,7 +215,52 @@ namespace Forelle.Tests.Parsing.Construction
             }
         }
 
-        [System.Diagnostics.Conditional("TESTING_PARSER_INSTRUMENTATION")]
+        private int? RunAmbiguityCheck(AmbiguityCheck check, IReadOnlyDictionary<NonTerminal, ParserNode> nonTerminalParsers)
+        {
+            Log($"START AMBIGUITY CHECK {check} @ {(this.IsInLookahead ? "L" + this._lookaheadIndex : this._index.ToString())}");
+
+            var originalLookaheadIndex = this._lookaheadIndex;
+            try
+            {
+                if (!this.IsInLookahead)
+                {
+                    this._lookaheadIndex = this._index;
+                }
+
+                int? indexToMark = null;
+                foreach (var leaf in check.Context.Leaves)
+                {
+                    if (leaf.Symbol is Token token)
+                    {
+                        if (leaf.CursorPosition == 0)
+                        {
+                            indexToMark = this._lookaheadIndex;
+                        }
+                        this.Eat(token);
+                    }
+                    else
+                    {
+                        this.Parse(nonTerminalParsers[(NonTerminal)leaf.Symbol]);
+                    }
+                }
+
+                Log($"MARK INDEX {indexToMark} FOR AMBIGUITY CHECK {check}");
+                this._ambiguityCheckResults.GetOrAdd(indexToMark.Value, _ => new Stack<AmbiguityCheck>()).Push(check);
+                return indexToMark;
+            }
+            catch (Exception ex) when (ex is InvalidOperationException || ex is KeyNotFoundException)
+            {
+                return null;
+            }
+            finally
+            {
+                this._lookaheadIndex = originalLookaheadIndex;
+
+                Log($"END AMBIGUITY CHECK {check}");
+            }
+        }
+
+        //[System.Diagnostics.Conditional("TESTING_PARSER_INSTRUMENTATION")]
         private static void Log(string message) => Console.WriteLine(message);
     }
 
