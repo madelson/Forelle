@@ -76,5 +76,8 @@ namespace Forelle.Tests.Parsing.Construction
             var (parser, errors) = ParserGeneratorTest.CreateParser(rules);
             Assert.IsEmpty(errors);
         }
+
+        // todo try another variant where A and B are truly non-differentiable out of context (e. g. both have the same
+        // rules and the only distinction is in the follow for the Stmt rule
     }
 }

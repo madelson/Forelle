@@ -1,0 +1,14 @@
+There are a class of ambiguities which I'll call "precedence-based". These have the characteristic that all the possible parse trees use the same nodes, just arranged differently (as opposed to different interpretations of the same symbols). For example:
+-E(E(ID) * E(ID)) vs. E(-E(ID) * E(ID))
+
+Right now we tackle a large number of these ambiguities via our left recursion rewrite. However, we don't capture all of them (such as the cast-precedence ambiguity test), because not all predecence-type ambiguities have left-recursion.
+
+In particular, we have a precedence ambiguity if we can refactor (inline) our grammar to have a 2 rules like this:
+E -> a E b
+E -> a E
+
+Here a and b aren't necessarily single tokens, just equivalent (wrt aliases) symbol sequences. This grammar is ambiguous: aaEb can be E(a E(a E b)) or E(a E(a E) b).
+
+Note that there are related ambiguities where the "a" in each rule aren't obviously equivalent but can parse the same symbol sequence; let's ignore these for now.
+
+The question is: can we (a) discover all such ambiguities and (b) perform a grammar rewrite to address them, like we do for left-recursive rules?
