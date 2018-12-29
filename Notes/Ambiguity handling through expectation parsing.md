@@ -1,3 +1,5 @@
+12/29/2018: decided to step back from this for now due to perf concerns; this is really powerful and even lets us do the palindrome grammar, but may be overkill for handling precedence ambiguities if something simpler (e. g. grammar rewrite) will do.
+
 We should consider expectation parsing. 
 
 The idea of this is that we always maintain a stack of the symbols that we expect to see after parsing the current symbol. Since we always start with Start<T> -> T End<T>, then the stack will initially be populated immediately with End<T>. When we are parsing a rule like TypeDecl -> CLASS Name { Members }, then we'd eat the CLASS token, and then before parsing Name we'd push }, Members, {. After parsing name, we pop {, eat that, then pop Members and parse that, then pop } and eat that.

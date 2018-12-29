@@ -20,3 +20,4 @@ After parsing T and seeing a "-" ahead: we can shift the "-" for the first rule 
 E(T - E)
 E(T(C("(" ID ")" E(T))) - E)
 Note that the first context is a generalization of the second! As a result, when we unify, we easily get the same parse; to get different parses, we need to outer-expand the top context to add a cast outside, which makes us prefer the bottom (reduce). The problem is that we SHOULD prefer shift IF POSSIBLE in this scenario
+
