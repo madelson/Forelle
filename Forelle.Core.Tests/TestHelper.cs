@@ -29,7 +29,7 @@ namespace Forelle.Tests
             return StripIndendation(actual).ShouldEqual(StripIndendation(expected));
         }
 
-        private static string StripIndendation(string text)
+        public static string StripIndendation(string text)
         {
             return text == null ? null : Regex.Replace(text.Trim(), @"\r?\n[ \t]*", "\r\n");
         }

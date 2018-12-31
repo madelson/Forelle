@@ -78,7 +78,24 @@ namespace Forelle.Tests.Parsing.Construction
 
             var (parser, errors) = ParserGeneratorTest.CreateParser(rules);
             Console.WriteLine(string.Join(Environment.NewLine, errors));
-            errors.Count.ShouldEqual(3);
+            CollectionAssert.AreEquivalent(
+                actual: errors.Select(TestHelper.StripIndendation),
+                expected: new[]
+                {
+@"Unable to distinguish between the following parse trees for the sequence of symbols [;]:
+	B(C(;))
+	B(D(;))",
+
+@"Unable to distinguish between the following parse trees for the sequence of symbols [;]:
+	A(B(C()) ;)
+	B(D(;))",
+
+@"Unable to distinguish between the following parse trees for the sequence of symbols [;]:
+	A(B(C()) ;)
+	C(;)"
+                }
+                .Select(TestHelper.StripIndendation)
+            );
         }
 
         /// <summary>
