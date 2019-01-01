@@ -1,0 +1,239 @@
+﻿using Forelle.Tests.Parsing.Construction;
+using NUnit.Framework;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using Forelle.Parsing;
+using static Forelle.Tests.TestGrammar;
+using static Forelle.Parsing.PotentialParseNode;
+
+namespace Forelle.Tests
+{
+    /// <summary>
+    /// This test file contains tests which we currently expect to fail because the cause of failure is under active development / investigation
+    /// </summary>
+    public class ExpectedFailureTests
+    {
+        #region ---- Discriminator Expansion Edge Cases ----
+        /// <summary>
+        /// This test contains a grammar where none of our basic expansion or 
+        /// prefixing methods generates a workable parse
+        /// </summary>
+        [Test]
+        public void ExpectFailure_TestDifferentiablePrefixGrammar()
+        {
+            var rules = new Rules
+            {
+                { A, Id },
+                { A, LeftParen, A, RightParen },
+                { B, QuestionMark },
+                { B, LeftParen, B, RightParen },
+
+                // these rules force us to generate a discriminator for A + | B -
+                { Stmt, A, Plus },
+                { Stmt, B, Minus },
+
+                // these rules force us to generate a discriminator for A | B which
+                // can serve as a prefix for the above
+                { Exp, A },
+                { Exp, B },
+            };
+
+            var (parser, errors) = ParserGeneratorTest.CreateParser(rules);
+            Assert.IsEmpty(errors);
+
+            // when we take away these rules, we no longer generate an A | B
+            // discriminator. That means that our only option is to continue
+            // stripping tokens off A + | B -. This falls apart on the "(" token,
+            // since we get A ) + | B ) -, A ) ) +, B ) ) -, ... The length of
+            // the rules just keeps growing and yet it is never the case that one
+            // of our existing discriminators forms a prefix
+            rules.Remove(rules[Exp, A]).ShouldEqual(true);
+            rules.Remove(rules[Exp, B]).ShouldEqual(true);
+
+            (parser, errors) = ParserGeneratorTest.CreateParser(rules);
+            Assert.IsEmpty(errors);
+        }
+
+        /// <summary>
+        /// This test contains a grammar where none of our basic expansion or 
+        /// prefixing methods generates a workable parse.
+        /// 
+        /// The difference between this test an <see cref="TestDifferentiablePrefixGrammar"/> is
+        /// that in this grammar A and B cannot be differentiated absent context. Therefore,
+        /// we cannot generate a discriminator for A | B although we CAN generate a recognizer
+        /// </summary>
+        [Test]
+        public void ExpectFailure_TestNonDifferentiablePrefixGrammar()
+        {
+            var rules = new Rules
+            {
+                { A, Id },
+                { A, LeftParen, A, RightParen },
+                { B, Id },
+                { B, LeftParen, B, RightParen },
+
+                // these rules force us to generate a discriminator for A + | B -
+                { Stmt, A, Plus },
+                { Stmt, B, Minus },
+            };
+
+            var (parser, errors) = ParserGeneratorTest.CreateParser(rules);
+            Assert.IsEmpty(errors);
+        }
+
+        // todo try another variant where A and B are truly non-differentiable out of context (e. g. both have the same
+        // rules and the only distinction is in the follow for the Stmt rule
+        #endregion
+
+        [Test]
+        public void ExpectFailure_TestCastPrecedenceAmbiguity()
+        {
+            var cast = new NonTerminal("Cast");
+            var term = new NonTerminal("Term");
+
+            // we're confused by cast of subtract vs subtract of cast:
+            // (x)y-z could be:
+            // cast(x, y-z)
+            // OR cast(x, y) - z
+            var rules = new Rules
+            {
+                { Exp, term },
+                { Exp, term, Minus, Exp },
+
+                { term, Id },
+                { term, cast },
+
+                { cast, LeftParen, Id, RightParen, Exp },
+                // make cast not an alias (todo shouldn't be needed)
+                { A, Plus, cast, Plus }
+            };
+
+            var (parser, errors) = ParserGeneratorTest.CreateParser(rules);
+            errors.Count.ShouldEqual(1);
+            errors[0].ShouldEqualIgnoreIndentation(
+@"Unable to distinguish between the following parse trees for the sequence of symbols [""("" ID "")"" Term - Exp]:
+    Exp(Term(Cast(""("" ID "")"" Exp(Term - Exp))))
+    Exp(Term(Cast(""("" ID "")"" Exp(Term))) - Exp)"
+            );
+
+            // make cast bind tighter
+            var resolution = new AmbiguityResolution(
+                Create(
+                    rules[Exp, term, Minus, Exp],
+                    Create(
+                        rules[term, cast],
+                        Create(
+                            rules[cast, LeftParen, Id, RightParen, Exp],
+                            LeftParen, Id, RightParen, rules[Exp, term]
+                        )
+                    ),
+                    Minus,
+                    Exp
+                ),
+                Create(
+                    rules[Exp, term],
+                    Create(
+                        rules[term, cast],
+                        Create(
+                            rules[cast, LeftParen, Id, RightParen, Exp],
+                            LeftParen, Id, RightParen,
+                            rules[Exp, term, Minus, Exp]
+                        )
+                    )
+                )
+            );
+            (parser, errors) = ParserGeneratorTest.CreateParser(rules, resolution);
+            Assert.IsEmpty(errors);
+
+            // TODO: right now this fails to parse!
+            // Here's why: above we identify a valid ambiguity between E -> T - E
+            // and E -> T because "-" is in the follow of E. This ambiguity relies on a very specific structure
+            // for the parsed T (it needs symbols that could be a cast). The problem is that we optimistically
+            // do prefix parsing, so we handle parsing E by first parsing T and then going on to parse
+            // E -> ... vs. E -> ... - E. Because of this, the ambiguity resolution gets baked into a parser node
+            // that isn't at all dependent on what symbols made up the T, leading to it being applied in cases
+            // where it shouldn't be (which shuts off other valid parsing paths). In contrast, had we worked through
+            // that symbol set via a set of discriminators we'd be in a good place because we'd be applying our
+            // ambiguity context to a very specific scenario
+            parser.Parse(new[] { Id, Minus, Id }, Exp);
+
+            //parser.Parse(new[] { LeftParen, Id, RightParen, Id, Minus, Id }, Exp);
+            //ParserGeneratorTest.ToGroupedTokenString(parser.Parsed)
+            //    .ShouldEqual("((( ID ) ID) - ID)");
+
+            // todo what if we resolve the other way?
+            // todo would be nice to express resolutions as strings in tests...
+
+            // todo idea: rather than doing lookback to fix, what if we went back and forced a discriminator rather than a prefix for E -> T - E vs. E -> T?
+        }
+
+        [Test]
+        public void ExpectFailure_TestGenericMethodCallAmbiguity()
+        {
+            // this test replicates the C# ambiguity with generic method calls:
+            // f(g<h, i>(j)) could either be invoking g<h, i> passing in j or
+            // calling f passing in g<h and i>(j)
+
+            var name = new NonTerminal("Name");
+            var argList = new NonTerminal("List<Exp>");
+            var genericParameters = new NonTerminal("GenPar");
+            var cmp = new NonTerminal("Cmp");
+
+            var rules = new Rules
+            {
+                { Exp, Id },
+                { Exp, LeftParen, Exp, RightParen },
+                { Exp, Id, cmp, Exp },
+                { Exp, name, LeftParen, argList, RightParen },
+
+                { cmp, LessThan },
+                { cmp, GreaterThan },
+
+                { argList, Exp },
+                { argList, Exp, Comma, argList },
+
+                { name, Id },
+                { name, Id, LessThan, genericParameters, GreaterThan },
+
+                { genericParameters, Id },
+                { genericParameters, Id, Comma, genericParameters },
+            };
+
+            Assert.Fail("unification is too slow for this right now");
+            //var (parser, errors) = ParserGeneratorTest.CreateParser(rules);
+            //Console.WriteLine(string.Join(Environment.NewLine, errors));
+            //Assert.Fail("not done");
+        }
+
+        [Test]
+        public void ExpectFailure_TestHigherLevelLookaheadRequired()
+        {
+            // This test is interesting because it is a very simple non-ambiguous grammar
+            // where we get stuck trying to generate a parser node for symbol B, which we
+            // cannot do because we don't know what to do when trying to parse B and seeing
+            // semicolon in the lookahead. Interestingly, if we backed up to the rule A -> B ;
+            // and inlined B to get A -> ; ; | A -> ;, we can definitely parse this!
+
+            // Note that this grammar isn't LR(1) either, as seen by using the grammar:
+            // S' -> A
+            // A -> B x
+            // B -> x
+            // B -> ''
+            // on http://jsmachines.sourceforge.net/machines/lr1.html
+            // Similarly, the simplified grammar A -> x x | x is LR(1)
+
+            var rules = new Rules
+            {
+                { A, B, SemiColon },
+                { B },
+                { B, SemiColon },
+            };
+
+            var (parser, errors) = ParserGeneratorTest.CreateParser(rules);
+            Assert.IsEmpty(errors);
+        }
+    }
+}
