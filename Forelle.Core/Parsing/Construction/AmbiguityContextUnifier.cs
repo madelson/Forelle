@@ -80,7 +80,7 @@ namespace Forelle.Parsing.Construction
                         p,
                         expansionCount: 0,
                         hasLeafExpansions: false,
-                        leafNodeCount: RootOf(p).Leaves.Count
+                        leafNodeCount: RootOf(p).LeafCount
                     ))
                     .ToImmutableArray(),
                 progressCount: 0,

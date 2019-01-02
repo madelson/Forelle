@@ -103,9 +103,9 @@ namespace Forelle.Parsing.Construction
             IReadOnlyCollection<PotentialParseParentNode> firsts, 
             IReadOnlyCollection<PotentialParseParentNode> seconds)
         {
-            var secondStates = seconds.Select(n => new NodeState(n)).ToArray();
+            var secondStates = seconds.Select(NodeState.CreateInitial).ToArray();
 
-            return from firstState in firsts.Select(n => new NodeState(n))
+            return from firstState in firsts.Select(NodeState.CreateInitial)
                    from secondState in secondStates
                    select new SearchState(firstState, secondState, new SearchContext(SearchAction.Initial, cursorRelativeLeafIndex: 0, expandedSecond: false));
         }
@@ -403,15 +403,6 @@ namespace Forelle.Parsing.Construction
 
         private sealed class NodeState
         {
-            public NodeState(PotentialParseParentNode node)
-            {
-                this.Node = node;
-                this.CursorLeafIndex = GetCursorLeafIndex(node);
-                this.ExpansionCount = 0;
-                this.TrailingUnmatchedSymbols = node.Leaves.Skip(this.CursorLeafIndex).Select(l => l.Symbol).ToImmutableLinkedList();
-                this.LeadingUnmatchedSymbols = node.Leaves.Take(this.CursorLeafIndex).Select(l => l.Symbol).Reverse().ToImmutableLinkedList();
-            }
-
             private NodeState(
                 PotentialParseParentNode node, 
                 int cursorLeafIndex,
@@ -433,6 +424,19 @@ namespace Forelle.Parsing.Construction
             public int LeafCountIncludingTrailingCursor => this.Node.LeafCount + (this.HasTrailingCursor ? 1 : 0);
             public ImmutableLinkedList<Symbol> TrailingUnmatchedSymbols { get; }
             public ImmutableLinkedList<Symbol> LeadingUnmatchedSymbols { get; }
+
+            public static NodeState CreateInitial(PotentialParseParentNode node)
+            {
+                var cursorLeafIndex = GetCursorLeafIndex(node);
+                return new NodeState(
+                    node,
+                    cursorLeafIndex,
+                    expansionCount: 0,
+                    // note: this could be done more efficiently, but it's not worth it because CreateInitial isn't called often
+                    trailingUnmatchedSymbols: node.GetLeaves().Skip(cursorLeafIndex).Select(l => l.Symbol).ToImmutableLinkedList(),
+                    leadingUnmatchedSymbols: node.GetLeaves().Take(cursorLeafIndex).Select(l => l.Symbol).Reverse().ToImmutableLinkedList()
+                );
+            }
 
             public static (NodeState a, NodeState b) Align(NodeState a, NodeState b)
             {

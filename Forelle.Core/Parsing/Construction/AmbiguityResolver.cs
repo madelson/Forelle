@@ -120,7 +120,7 @@ namespace Forelle.Parsing.Construction
             if (unified)
             {
                 builder.Append(" for the sequence of symbols [")
-                    .Append(string.Join(" ", context.Values.First().Leaves))
+                    .Append(string.Join(" ", context.Values.First().GetLeaves()))
                     .Append(']');
             }
             builder.AppendLine(":")
