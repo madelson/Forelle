@@ -7,7 +7,7 @@ using System.Text;
 
 using ParseTreePath = Medallion.Collections.ImmutableLinkedList<(Forelle.Parsing.PotentialParseNode node, int index)>;
 
-namespace Forelle.Parsing.Construction
+namespace Forelle.Parsing.Construction.Ambiguity
 {
     // TODO AMB DELETE
 

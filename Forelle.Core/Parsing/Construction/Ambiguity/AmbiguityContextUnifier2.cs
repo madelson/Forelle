@@ -6,7 +6,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
 
-namespace Forelle.Parsing.Construction
+namespace Forelle.Parsing.Construction.Ambiguity
 {
     // TODO AMB we aren't currently correctly handling the case where the cursor rests on a non-terminal in both nodes and we just move on past that; we should probably (a) block
     // alignment in this case (b) handle this first thing after resolving trailing cursors (c) handle via a transform much like what ExpandFirstContexts does today in AmbiguityContextualizer

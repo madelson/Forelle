@@ -5,7 +5,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
 
-namespace Forelle.Parsing.Construction
+namespace Forelle.Parsing.Construction.Ambiguity
 {
     // TODO AMB remove expand follow stuff. ALSO, remove expandFirst stuff and move it into unification as a step that blocks alignment (cursor on non-terminal leaf)
     // we can use much of the same code we use for this on that. Finally, merge/reconcile this class with the unifier2, maybe move all to ambiguity folder

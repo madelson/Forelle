@@ -5,7 +5,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
 
-namespace Forelle.Parsing.Construction
+namespace Forelle.Parsing.Construction.Ambiguity
 {
     internal class AmbiguityResolver
     {

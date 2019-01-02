@@ -1,4 +1,5 @@
-﻿using Medallion.Collections;
+﻿using Forelle.Parsing.Construction.Ambiguity;
+using Medallion.Collections;
 using System;
 using System.Collections.Generic;
 using System.Linq;
