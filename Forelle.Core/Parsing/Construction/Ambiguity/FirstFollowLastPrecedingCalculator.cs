@@ -6,20 +6,21 @@ using System.Text;
 
 namespace Forelle.Parsing.Construction.Ambiguity
 {
-    // TODO AMB comment, move to ambiguity folder
-
+    /// <summary>
+    /// This class builds on the capabilities of <see cref="IFirstFollowProvider"/> by allowing us to look backwards in the grammar as well
+    /// (last and preceding sets). This is accomplished simply by building a <see cref="IFirstFollowProvider"/> for a grammar where all productions
+    /// have their symbol lists reversed!
+    /// 
+    /// Note that currently this class does not support by-rule sets (e. g. <see cref="IFirstFollowProvider.FollowOf(Rule)"/>)
+    /// </summary>
     internal class FirstFollowLastPrecedingCalculator
     {
-        // TODO AMB remove field
-        private readonly IReadOnlyDictionary<Rule, Rule> _ruleToReverseRules;
         private readonly IFirstFollowProvider _firstFollowProvider, _lastPrecedingProvider;
 
         private FirstFollowLastPrecedingCalculator(
-            IReadOnlyDictionary<Rule, Rule> ruleToReverseRules,
             IFirstFollowProvider firstFollowProvider,
             IFirstFollowProvider lastPrecedingProvider)
         {
-            this._ruleToReverseRules = ruleToReverseRules;
             this._firstFollowProvider = firstFollowProvider;
             this._lastPrecedingProvider = lastPrecedingProvider;
         }
@@ -28,11 +29,10 @@ namespace Forelle.Parsing.Construction.Ambiguity
         {
             var firstFollowProvider = FirstFollowCalculator.Create(rules);
 
-            var rulesToReversedRules = rules.ToDictionary(r => r, r => new Rule(r.Produced, r.Symbols.Reverse()));
-            var lastPrecedingProvider = FirstFollowCalculator.Create(rulesToReversedRules.Values);
+            var reversedRules = rules.Select(r => new Rule(r.Produced, r.Symbols.Reverse())).ToArray();
+            var lastPrecedingProvider = FirstFollowCalculator.Create(reversedRules);
 
             return new FirstFollowLastPrecedingCalculator(
-                ruleToReverseRules: rulesToReversedRules,
                 firstFollowProvider: firstFollowProvider,
                 lastPrecedingProvider: lastPrecedingProvider
             );
@@ -41,6 +41,10 @@ namespace Forelle.Parsing.Construction.Ambiguity
         public ImmutableHashSet<Token> FirstOf(Symbol symbol) => this._firstFollowProvider.FirstOf(symbol);
         public ImmutableHashSet<Token> FollowOf(Symbol symbol) => this._firstFollowProvider.FollowOf(symbol);
         
+        /// <summary>
+        /// Similar to <see cref="FirstFollowProviderExtensions.NextOf(IFirstFollowProvider, RuleRemainder)"/>, 
+        /// but avoids building up a new <see cref="ImmutableHashSet{T}"/>.
+        /// </summary>
         public bool NextOfContains(RuleRemainder rule, Token contained)
         {
             for (var i = 0; i < rule.Symbols.Count; ++i)
