@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Forelle.Parsing;
 using static Forelle.Tests.TestGrammar;
 using static Forelle.Parsing.PotentialParseNode;
+using Forelle.Tests.Parsing;
 
 namespace Forelle.Tests
 {
@@ -168,44 +169,6 @@ namespace Forelle.Tests
             // todo would be nice to express resolutions as strings in tests...
 
             // todo idea: rather than doing lookback to fix, what if we went back and forced a discriminator rather than a prefix for E -> T - E vs. E -> T?
-        }
-
-        [Test]
-        public void ExpectFailure_TestGenericMethodCallAmbiguity()
-        {
-            // this test replicates the C# ambiguity with generic method calls:
-            // f(g<h, i>(j)) could either be invoking g<h, i> passing in j or
-            // calling f passing in g<h and i>(j)
-
-            var name = new NonTerminal("Name");
-            var argList = new NonTerminal("List<Exp>");
-            var genericParameters = new NonTerminal("GenPar");
-            var cmp = new NonTerminal("Cmp");
-
-            var rules = new Rules
-            {
-                { Exp, Id },
-                { Exp, LeftParen, Exp, RightParen },
-                { Exp, Id, cmp, Exp },
-                { Exp, name, LeftParen, argList, RightParen },
-
-                { cmp, LessThan },
-                { cmp, GreaterThan },
-
-                { argList, Exp },
-                { argList, Exp, Comma, argList },
-
-                { name, Id },
-                { name, Id, LessThan, genericParameters, GreaterThan },
-
-                { genericParameters, Id },
-                { genericParameters, Id, Comma, genericParameters },
-            };
-
-            Assert.Fail("unification is too slow for this right now");
-            //var (parser, errors) = ParserGeneratorTest.CreateParser(rules);
-            //Console.WriteLine(string.Join(Environment.NewLine, errors));
-            //Assert.Fail("not done");
         }
 
         [Test]

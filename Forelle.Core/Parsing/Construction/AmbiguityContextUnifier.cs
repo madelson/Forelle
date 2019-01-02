@@ -9,6 +9,8 @@ using ParseTreePath = Medallion.Collections.ImmutableLinkedList<(Forelle.Parsing
 
 namespace Forelle.Parsing.Construction
 {
+    // TODO AMB DELETE
+
     // todo this code currently doesn't take advantage of the cursor at all, but that could really help by narrowing the
     // possibilities!
 
@@ -95,7 +97,7 @@ namespace Forelle.Parsing.Construction
                     unified = currentState.Paths.Select(p => RootOf(p.Path)).ToArray();
                     return true;
                 }
-
+                
                 if (currentState.TotalExpansionCount < MaxExpansionCount)
                 {
                     this.ExpandLeaves(currentState, priorityQueue);
@@ -161,6 +163,7 @@ namespace Forelle.Parsing.Construction
                 return false; // didn't finish
             }
 
+            // todo should this be in the root expand check as well?
             // advanced none: finished if none equivalent.
             // It's possible to find equivalent expansions. However, this can't be the ambiguous
             // case so just ignore it

@@ -20,10 +20,27 @@ namespace Forelle.Parsing
         public Symbol Symbol { get; }
         internal abstract int? CursorPosition { get; }
 
-        private IReadOnlyList<PotentialParseLeafNode> _cachedLeaves;
-        internal IReadOnlyList<PotentialParseLeafNode> Leaves => this._cachedLeaves ?? (this._cachedLeaves = this.GetLeaves());
+        // TODO AMB remove leaves
+        private protected IReadOnlyList<PotentialParseLeafNode> _cachedLeaves;
+        internal IReadOnlyList<PotentialParseLeafNode> Leaves
+        {
+            get
+            {
+                if (this._cachedLeaves == null)
+                {
+                    var leaves = new PotentialParseLeafNode[this.LeafCount];
+                    var index = 0;
+                    this.FillLeaves(leaves, ref index);
+                    this._cachedLeaves = leaves;
+                }
 
-        private protected abstract IReadOnlyList<PotentialParseLeafNode> GetLeaves();
+                return this._cachedLeaves;
+            }
+        }
+
+        internal abstract int LeafCount { get; }
+
+        internal abstract void FillLeaves(PotentialParseLeafNode[] leaves, ref int index);
         private protected abstract int GetValueHashCode();
 
         private int _cachedValueHashCode;
@@ -140,7 +157,8 @@ namespace Forelle.Parsing
         }
 
         internal override int? CursorPosition { get; }
-
+        internal override int LeafCount => 1;
+        
         internal override void ToString(StringBuilder builder, bool renderCursorOnly)
         {
             var symbolString = ToString(this.Symbol);
@@ -161,8 +179,9 @@ namespace Forelle.Parsing
                 builder.Append(symbolString);
             }
         }
-        
-        private protected override IReadOnlyList<PotentialParseLeafNode> GetLeaves() => new[] { this };
+
+        internal override void FillLeaves(PotentialParseLeafNode[] leaves, ref int index) => leaves[index++] = this;
+
         private protected override int GetValueHashCode() => this.Symbol.GetHashCode();
     }
 
@@ -185,7 +204,10 @@ namespace Forelle.Parsing
                 {
                     throw new ArgumentException($"Incorrect symbol type for {nameof(children)}[{i}]. Expected '{this.Rule.Symbols[i]}', but found '{child.Symbol}'.", nameof(children));
                 }
-                else if (child.CursorPosition.HasValue)
+
+                this.LeafCount += child.LeafCount;
+
+                if (child.CursorPosition.HasValue)
                 {
                     Invariant.Require(!this.CursorPosition.HasValue, "at most one child may have a cursor set");
                     if (child.HasTrailingCursor())
@@ -214,6 +236,7 @@ namespace Forelle.Parsing
         public new NonTerminal Symbol => this.Rule.Produced;
         public IReadOnlyList<PotentialParseNode> Children { get; }
         internal override int? CursorPosition { get; }
+        internal override int LeafCount { get; }
 
         internal override void ToString(StringBuilder builder, bool renderCursorOnly)
         {
@@ -236,26 +259,22 @@ namespace Forelle.Parsing
             builder.Append(renderCursorOnly ? CursorSpacer : ')');
         }
 
-        private protected override IReadOnlyList<PotentialParseLeafNode> GetLeaves()
+        internal override void FillLeaves(PotentialParseLeafNode[] leaves, ref int index)
         {
-            var leafCount = 0;
-            for (var i = 0; i < this.Children.Count; ++i)
+            if (this._cachedLeaves != null)
             {
-                leafCount += this.Children[i].Leaves.Count;
-            }
-
-            var leaves = new PotentialParseLeafNode[leafCount];
-            var leavesIndex = 0;
-            for (var i = 0; i < this.Children.Count; ++i)
-            {
-                var childLeaves = this.Children[i].Leaves;
-                for (var j = 0; j < childLeaves.Count; ++j)
+                for (var i = 0; i < this._cachedLeaves.Count; ++i)
                 {
-                    leaves[leavesIndex++] = childLeaves[j];
+                    leaves[index++] = this._cachedLeaves[i];
                 }
             }
-
-            return leaves;
+            else
+            {
+                for (var i = 0; i < this.Children.Count; ++i)
+                {
+                    this.Children[i].FillLeaves(leaves, ref index);
+                }
+            }
         }
 
         private protected override int GetValueHashCode()

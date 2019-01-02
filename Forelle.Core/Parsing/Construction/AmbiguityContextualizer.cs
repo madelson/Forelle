@@ -7,6 +7,9 @@ using System.Text;
 
 namespace Forelle.Parsing.Construction
 {
+    // TODO AMB remove expand follow stuff. ALSO, remove expandFirst stuff and move it into unification as a step that blocks alignment (cursor on non-terminal leaf)
+    // we can use much of the same code we use for this on that. Finally, merge/reconcile this class with the unifier2, maybe move all to ambiguity folder
+
     internal class AmbiguityContextualizer
     {
         private readonly IReadOnlyDictionary<NonTerminal, IReadOnlyList<Rule>> _rulesByProduced;
@@ -39,23 +42,25 @@ namespace Forelle.Parsing.Construction
             );
         }
 
-        public Dictionary<RuleRemainder, PotentialParseNode>[] GetExpandedAmbiguityContexts(IReadOnlyList<RuleRemainder> rules, Token lookaheadToken)
+        public Dictionary<RuleRemainder, PotentialParseParentNode[]> GetExpandedAmbiguityContexts(IReadOnlyList<RuleRemainder> rules, Token lookaheadToken)
         {
             Guard.NotNullOrContainsNull(rules, nameof(rules));
             if (lookaheadToken == null) { throw new ArgumentNullException(nameof(lookaheadToken)); }
             
             var results = rules.ToDictionary(
                 r => r,
-                r => this.ExpandContexts(DefaultMarkedParseOf(r), lookaheadToken).ToArray()
+                // todo see if we can stop relying on this cast
+                r => this.ExpandContexts(DefaultMarkedParseOf(r), lookaheadToken).Cast<PotentialParseParentNode>().ToArray()
             );
             Invariant.Require(results.SelectMany(kvp => kvp.Value).All(n => n.CursorPosition.HasValue && !n.HasTrailingCursor()), "all expansions should contain the lookahead token");
 
-            var crossJoinedContexts = CrossJoin(
-                    results.Select(kvp => kvp.Value.Select(node => (rule: kvp.Key, node)).ToArray())
-                )
-                .Select(c => c.ToDictionary(t => t.rule, t => t.node))
-                .ToArray();
-            return crossJoinedContexts;
+            return results;
+            //var crossJoinedContexts = CrossJoin(
+            //        results.Select(kvp => kvp.Value.Select(node => (rule: kvp.Key, node)).ToArray())
+            //    )
+            //    .Select(c => c.ToDictionary(t => t.rule, t => t.node))
+            //    .ToArray();
+            //return crossJoinedContexts;
         }
         
         private IReadOnlyList<PotentialParseNode> ExpandContexts(PotentialParseParentNode node, Token lookaheadToken)

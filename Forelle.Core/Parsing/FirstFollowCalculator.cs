@@ -18,7 +18,7 @@ namespace Forelle.Parsing
             this._followSets = followSets;
         }
 
-        public static FirstFollowCalculator Create(IReadOnlyList<Rule> rules)
+        public static FirstFollowCalculator Create(IReadOnlyCollection<Rule> rules)
         {
             var allSymbols = new HashSet<Symbol>(rules.SelectMany(r => r.Symbols).Concat(rules.Select(r => r.Produced)));
             var firstSets = ComputeFirstSets(allSymbols, rules);
