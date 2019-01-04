@@ -11,7 +11,6 @@ namespace Forelle.Parsing.Construction.Ambiguity
     {
         private readonly IReadOnlyDictionary<IReadOnlyCollection<PotentialParseNode>, AmbiguityResolution> _ambiguityResolutions;
         private readonly AmbiguityContextualizer _contextualizer;
-        private readonly AmbiguityContextUnifier _unifier;
         private readonly AmbiguityContextUnifier2 _unifier2;
         
         public AmbiguityResolver(
@@ -33,7 +32,6 @@ namespace Forelle.Parsing.Construction.Ambiguity
                 firstFollowProvider,
                 discriminatorContexts
             );
-            this._unifier = new AmbiguityContextUnifier(rulesByProduced, firstFollowProvider);
             this._unifier2 = new AmbiguityContextUnifier2(rulesByProduced);
         }
 
@@ -72,7 +70,7 @@ namespace Forelle.Parsing.Construction.Ambiguity
 
             return (
                 Rule: rules[0],
-                Errors: new[] { ToAmbiguityError(context, unified) }
+                Errors: new[] { ToAmbiguityError(context, unified, lookaheadToken) }
             );
 
             //var unifiedContexts = contexts.Select(c =>
@@ -114,7 +112,7 @@ namespace Forelle.Parsing.Construction.Ambiguity
             //return (Rule: preferredRules[0], Errors: Array.Empty<string>());
         }
 
-        private static string ToAmbiguityError(IReadOnlyDictionary<RuleRemainder, PotentialParseParentNode> context, bool unified)
+        private static string ToAmbiguityError(IReadOnlyDictionary<RuleRemainder, PotentialParseParentNode> context, bool unified, Token lookahead)
         {
             var builder = new StringBuilder("Unable to distinguish between the following parse trees");
             if (unified)
@@ -122,6 +120,10 @@ namespace Forelle.Parsing.Construction.Ambiguity
                 builder.Append(" for the sequence of symbols [")
                     .Append(string.Join(" ", context.Values.First().GetLeaves()))
                     .Append(']');
+            }
+            else
+            {
+                builder.Append($" upon encountering token '{lookahead}'");
             }
             builder.AppendLine(":")
                 .AppendLine(string.Join(Environment.NewLine, context.Values.Select(n => $"\t{(unified ? n.ToString() : n.ToMarkedString().Replace(Environment.NewLine, Environment.NewLine + "\t"))}").OrderBy(s => s)));
