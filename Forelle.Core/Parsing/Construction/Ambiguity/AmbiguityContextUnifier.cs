@@ -8,29 +8,6 @@ using System.Text;
 
 namespace Forelle.Parsing.Construction.Ambiguity
 {
-    // TODO AMB we aren't currently correctly handling the case where the cursor rests on a non-terminal in both nodes and we just move on past that; we should probably (a) block
-    // alignment in this case (b) handle this first thing after resolving trailing cursors (c) handle via a transform much like what ExpandFirstContexts does today in AmbiguityContextualizer
-    // to find all methods of expanding that leaf / subsequent leaves. ONCE we have this, we can stop doing ExpandFirst/ExpandFollow in AmbiguityContextualizer
-
-    // TODO AMB extensive comments
-
-    // unify PAIRS of nodes, not N nodes. This avoids needing to find an N-way ambiguity, and also simplifies the problem. The consumer must resolve in a consistent manner
-
-    // starting at the cursor, unify leaves after the cursor to the end, then proceeding the cursor to the beginning. Finally, unify roots if not unified
-    // note that as we do any of these steps, we may disrupt any previous steps (due to changing the root!)
-
-    // to unify at a given position, for each node:
-    // (a) with a token at position, we check to see if any node does not have the token in the NextOf/LastOf set. If so, we're stuck => dead end
-    // (b) with a non-terminal at position, we consider all rules to expand that non-terminal
-    // (c) with nothing at position, we consider all rules to expand the root. Since we've eliminated left-recursion, we don't have to worry about looping forever here without doing anything
-
-    // to unify at the root
-
-    // additionally, note that when considering any given position (or root), we will track the highest expanded node index and only consider expansions for nodes with the same or higher index. The reason
-    // is to avoid duplicate work where 2 search paths re-converge
-
-    // we build a PQ of our search states
-
     /// <summary>
     /// This class is responsible for finding a "unified" ambiguity given two <see cref="PotentialParseParentNode" />s that represent an ambiguity 
     /// point. A "unified" ambiguity is a true example ambiguity in the grammar: two different parse trees for the same sequence of symbols encountered
@@ -42,7 +19,7 @@ namespace Forelle.Parsing.Construction.Ambiguity
     /// set of leaves and the same root <see cref="NonTerminal"/>. We align leaves based on the <see cref="PotentialParseNode.CursorPosition" /> to stay
     /// true to how the parser would encounter the ambiguity.
     /// </summary>
-    internal class AmbiguityContextUnifier2
+    internal class AmbiguityContextUnifier
     {
         /// <summary>
         /// Used to keep the algorithm from hanging forever, especially in cases where there are an unbounded number of expansions that we could try
@@ -57,7 +34,7 @@ namespace Forelle.Parsing.Construction.Ambiguity
         /// </summary>
         private readonly ILookup<Symbol, (Rule rule, int index)> _nonDiscriminatorSymbolReferences;
 
-        public AmbiguityContextUnifier2(IReadOnlyDictionary<NonTerminal, IReadOnlyList<Rule>> rulesByProduced)
+        public AmbiguityContextUnifier(IReadOnlyDictionary<NonTerminal, IReadOnlyList<Rule>> rulesByProduced)
         {
             this._rulesByProduced = rulesByProduced;
 
@@ -66,8 +43,7 @@ namespace Forelle.Parsing.Construction.Ambiguity
                 .ToArray();
 
             this._firstFollowLastPreceding = FirstFollowLastPrecedingCalculator.Create(nonDiscriminatorRules);
-
-            // TODO AMB rationalize with similar build of this in AmbContextualizer
+            
             this._nonDiscriminatorSymbolReferences = nonDiscriminatorRules
                 .SelectMany(r => r.Symbols.Select((s, i) => (referenced: s, index: i, rule: r)))
                 .ToLookup(t => t.referenced, t => (rule: t.rule, index: t.index));

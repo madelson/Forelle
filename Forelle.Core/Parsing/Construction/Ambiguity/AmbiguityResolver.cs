@@ -11,7 +11,7 @@ namespace Forelle.Parsing.Construction.Ambiguity
     {
         private readonly IReadOnlyDictionary<IReadOnlyCollection<PotentialParseNode>, AmbiguityResolution> _ambiguityResolutions;
         private readonly AmbiguityContextualizer _contextualizer;
-        private readonly AmbiguityContextUnifier2 _unifier2;
+        private readonly AmbiguityContextUnifier _unifier;
         
         public AmbiguityResolver(
             IReadOnlyDictionary<NonTerminal, IReadOnlyList<Rule>> rulesByProduced,
@@ -32,10 +32,10 @@ namespace Forelle.Parsing.Construction.Ambiguity
                 firstFollowProvider,
                 discriminatorContexts
             );
-            this._unifier2 = new AmbiguityContextUnifier2(rulesByProduced);
+            this._unifier = new AmbiguityContextUnifier(rulesByProduced);
         }
 
-        // TODO AMB clean up, move to ambiguity folder
+        // TODO AMB clean up
 
         public (RuleRemainder Rule, string[] Errors) ResolveAmbiguity(IReadOnlyList<RuleRemainder> rules, Token lookaheadToken)
         {
@@ -47,7 +47,7 @@ namespace Forelle.Parsing.Construction.Ambiguity
 
             Dictionary<RuleRemainder, PotentialParseParentNode> context;
             bool unified;
-            if (this._unifier2.TryUnify(contexts[rules[0]], contexts[rules[1]], lookaheadToken, out var unified1, out var unified2))
+            if (this._unifier.TryUnify(contexts[rules[0]], contexts[rules[1]], lookaheadToken, out var unified1, out var unified2))
             {
                 context = new Dictionary<RuleRemainder, PotentialParseParentNode>
                 {
