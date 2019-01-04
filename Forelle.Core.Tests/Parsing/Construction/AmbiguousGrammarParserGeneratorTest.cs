@@ -86,9 +86,9 @@ namespace Forelle.Tests.Parsing.Construction
 	B(C(;))
 	B(D(;))",
 
-@"Unable to distinguish between the following parse trees:
-	A(B(C()) ;)
-    .........^.
+@"Unable to distinguish between the following parse trees upon encountering token ';':
+	C()
+    ...^
 	C(;)
     ..^."
                 }
@@ -297,11 +297,11 @@ namespace Forelle.Tests.Parsing.Construction
             var (parser, errors) = ParserGeneratorTest.CreateParser(rules);
             errors.Count.ShouldEqual(1);
             errors[0].ShouldEqualIgnoreIndentation(
-                @"Unable to distinguish between the following parse trees:
+                @"Unable to distinguish between the following parse trees upon encountering token '+':
+	                A()
+	                ...^
 	                A(+ A +)
-	                ..^.....
-	                A(+ A() +)
-	                ........^."
+	                ..^....."
             );
         }
     }
