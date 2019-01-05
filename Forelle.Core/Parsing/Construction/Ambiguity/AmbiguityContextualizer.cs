@@ -28,7 +28,7 @@ namespace Forelle.Parsing.Construction.Ambiguity
             this._discriminatorContexts = discriminatorContexts;
         }
 
-        public Dictionary<RuleRemainder, PotentialParseParentNode[]> GetExpandedAmbiguityContexts(IReadOnlyList<RuleRemainder> rules, Token lookaheadToken)
+        public Dictionary<RuleRemainder, PotentialParseParentNode[]> GetAmbiguityContexts(IReadOnlyList<RuleRemainder> rules, Token lookaheadToken)
         {
             Guard.NotNullOrContainsNull(rules, nameof(rules));
             if (lookaheadToken == null) { throw new ArgumentNullException(nameof(lookaheadToken)); }
