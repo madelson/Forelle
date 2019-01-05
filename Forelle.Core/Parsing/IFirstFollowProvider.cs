@@ -35,7 +35,8 @@ namespace Forelle.Parsing
             }
 
             // if we reach here, we're nullable
-            return builder.ToImmutable().Add(null);
+            builder.Add(null);
+            return builder.ToImmutable();
         }
 
         public static ImmutableHashSet<Token> NextOf(this IFirstFollowProvider provider, Rule rule)

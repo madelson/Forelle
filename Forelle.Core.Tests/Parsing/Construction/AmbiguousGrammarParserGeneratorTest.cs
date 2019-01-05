@@ -86,13 +86,11 @@ namespace Forelle.Tests.Parsing.Construction
 	B(C(;))
 	B(D(;))",
 
-@"Unable to distinguish between the following parse trees for the sequence of symbols [;]:
-	A(B(C()) ;)
-	B(D(;))",
-
-@"Unable to distinguish between the following parse trees for the sequence of symbols [;]:
-	A(B(C()) ;)
-	C(;)"
+@"Unable to distinguish between the following parse trees upon encountering token ';':
+	C()
+    ...^
+	C(;)
+    ..^."
                 }
                 .Select(TestHelper.StripIndendation)
             );
@@ -227,6 +225,60 @@ namespace Forelle.Tests.Parsing.Construction
                 .ShouldEqual("(if (if ID then ID else ID) then ID)");
         }
 
+        [Test]
+        public void TestGenericMethodCallAmbiguity()
+        {
+            // this test replicates the C# ambiguity with generic method calls:
+            // f(g<h, i>(j)) could either be invoking g<h, i> passing in j or
+            // calling f passing in g<h and i>(j)
+
+            var name = new NonTerminal("Name");
+            var argList = new NonTerminal("Args");
+            var genericParameters = new NonTerminal("GenPar");
+            var cmp = new NonTerminal("Cmp");
+            var compared = new NonTerminal("Compared");
+
+            var rules = new Rules
+            {
+                { Exp, compared },
+                { Exp, compared, cmp, compared },
+
+                { compared, Id },
+                { compared, LeftParen, Id, RightParen },
+                { compared, name, LeftParen, argList, RightParen },
+
+                { cmp, LessThan },
+                { cmp, GreaterThan },
+
+                { argList, Exp },
+                { argList, Exp, Comma, argList },
+
+                { name, Id },
+                { name, Id, LessThan, genericParameters, GreaterThan },
+
+                { genericParameters, Id },
+                { genericParameters, Id, Comma, genericParameters },
+            };
+
+            var (parser, errors) = ParserGeneratorTest.CreateParser(rules);
+            errors.Count.ShouldEqual(1);
+            errors[0].ShouldEqualIgnoreIndentation(
+@"Unable to distinguish between the following parse trees for the sequence of symbols [ID < ID , ID > ""("" ID "")""]:
+    Args(Exp(Compared(ID) Cmp(<) Compared(ID)) , Args(Exp(Compared(ID) Cmp(>) Compared(""("" ID "")""))))
+    Args(Exp(Compared(Name(ID < GenPar(ID , GenPar(ID)) >) ""("" Args(Exp(Compared(ID))) "")"")))");
+
+            var resolution = new AmbiguityResolution(
+                PotentialParseNodeParser.Parse(@"Args(Exp(Compared(ID) Cmp(<) Compared(ID)) , Args(Exp(Compared(ID) Cmp(>) Compared(""("" ID "")""))))", rules),
+                PotentialParseNodeParser.Parse(@"Args(Exp(Compared(Name(ID < GenPar(ID , GenPar(ID)) >) ""("" Args(Exp(Compared(ID))) "")"")))", rules)
+            );
+
+            (parser, errors) = ParserGeneratorTest.CreateParser(rules, resolution);
+            Assert.IsEmpty(errors);
+
+            parser.Parse(new[] { Id, LeftParen, Id, LessThan, Id, Comma, Id, GreaterThan, LeftParen, Id, RightParen, RightParen }, Exp);
+            ParserGeneratorTest.ToGroupedTokenString(parser.Parsed).ShouldEqual("(ID ( ((ID < ID) , (ID > (( ID )))) ))");
+        }
+
         /// <summary>
         /// This test demonstrates handling of an unambiguous grammar which we can't handle. Because
         /// it's in that class, we're unable to unify the ambiguity contexts we find because there isn't
@@ -245,11 +297,11 @@ namespace Forelle.Tests.Parsing.Construction
             var (parser, errors) = ParserGeneratorTest.CreateParser(rules);
             errors.Count.ShouldEqual(1);
             errors[0].ShouldEqualIgnoreIndentation(
-                @"Unable to distinguish between the following parse trees:
+                @"Unable to distinguish between the following parse trees upon encountering token '+':
+	                A()
+	                ...^
 	                A(+ A +)
-	                ..^.....
-	                A(+ A() +)
-	                ........^."
+	                ..^....."
             );
         }
     }

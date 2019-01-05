@@ -18,12 +18,9 @@ namespace Forelle.Parsing
         }
 
         public Symbol Symbol { get; }
-        internal abstract int? CursorPosition { get; }
-
-        private IReadOnlyList<PotentialParseLeafNode> _cachedLeaves;
-        internal IReadOnlyList<PotentialParseLeafNode> Leaves => this._cachedLeaves ?? (this._cachedLeaves = this.GetLeaves());
-
-        private protected abstract IReadOnlyList<PotentialParseLeafNode> GetLeaves();
+        internal abstract int? CursorPosition { get; } 
+        internal abstract int LeafCount { get; }
+        
         private protected abstract int GetValueHashCode();
 
         private int _cachedValueHashCode;
@@ -140,7 +137,8 @@ namespace Forelle.Parsing
         }
 
         internal override int? CursorPosition { get; }
-
+        internal override int LeafCount => 1;
+        
         internal override void ToString(StringBuilder builder, bool renderCursorOnly)
         {
             var symbolString = ToString(this.Symbol);
@@ -162,7 +160,6 @@ namespace Forelle.Parsing
             }
         }
         
-        private protected override IReadOnlyList<PotentialParseLeafNode> GetLeaves() => new[] { this };
         private protected override int GetValueHashCode() => this.Symbol.GetHashCode();
     }
 
@@ -185,7 +182,10 @@ namespace Forelle.Parsing
                 {
                     throw new ArgumentException($"Incorrect symbol type for {nameof(children)}[{i}]. Expected '{this.Rule.Symbols[i]}', but found '{child.Symbol}'.", nameof(children));
                 }
-                else if (child.CursorPosition.HasValue)
+
+                this.LeafCount += child.LeafCount;
+
+                if (child.CursorPosition.HasValue)
                 {
                     Invariant.Require(!this.CursorPosition.HasValue, "at most one child may have a cursor set");
                     if (child.HasTrailingCursor())
@@ -214,6 +214,7 @@ namespace Forelle.Parsing
         public new NonTerminal Symbol => this.Rule.Produced;
         public IReadOnlyList<PotentialParseNode> Children { get; }
         internal override int? CursorPosition { get; }
+        internal override int LeafCount { get; }
 
         internal override void ToString(StringBuilder builder, bool renderCursorOnly)
         {
@@ -234,28 +235,6 @@ namespace Forelle.Parsing
             }
 
             builder.Append(renderCursorOnly ? CursorSpacer : ')');
-        }
-
-        private protected override IReadOnlyList<PotentialParseLeafNode> GetLeaves()
-        {
-            var leafCount = 0;
-            for (var i = 0; i < this.Children.Count; ++i)
-            {
-                leafCount += this.Children[i].Leaves.Count;
-            }
-
-            var leaves = new PotentialParseLeafNode[leafCount];
-            var leavesIndex = 0;
-            for (var i = 0; i < this.Children.Count; ++i)
-            {
-                var childLeaves = this.Children[i].Leaves;
-                for (var j = 0; j < childLeaves.Count; ++j)
-                {
-                    leaves[leavesIndex++] = childLeaves[j];
-                }
-            }
-
-            return leaves;
         }
 
         private protected override int GetValueHashCode()

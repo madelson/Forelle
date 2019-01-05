@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Medallion.Collections;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -78,6 +79,14 @@ namespace Forelle.Parsing
                 case PotentialParseLeafNode leaf: return node.CursorPosition == 0 ? leaf : throw new InvalidOperationException("trailing cursor");
                 default: throw new InvalidOperationException("Unexpected node type");
             }
+        }
+
+        public static IEnumerable<PotentialParseLeafNode> GetLeaves(this PotentialParseNode node)
+        {
+            if (node == null) { throw new ArgumentNullException(nameof(node)); }
+
+            return Traverse.DepthFirst(node, n => n is PotentialParseParentNode parent ? parent.Children : Enumerable.Empty<PotentialParseNode>())
+                .OfType<PotentialParseLeafNode>();
         }
     }
 }
