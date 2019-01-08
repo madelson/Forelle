@@ -12,6 +12,8 @@ Other potential techniques:
 * Sometimes we may not have an existing discriminator to serve as a prefix; can we create one artificially?
 	* How do we know when to do this?
 	* Do we need to try all possible combinations of prefix symbols or can we be smarter about it?
+* When we are running out of symbols trying to build a discriminator, sometimes we can "lift" up the problem symbol into the referencing rule to give more context
+	for discrimination
 * We could try multi-token lookahead
 * We could try special-case nodes with known follow (e. g. if I'm parsing S -> A b and FOLLOW(A) is a proper superset of { b }, then potentially we can gain ground by parsing a version of A with restricted follow set { b } (NOTE: our discriminators may already handle this)
 

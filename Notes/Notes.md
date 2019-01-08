@@ -28,3 +28,8 @@ IDEAS 1/3/19
 
 IDEAS 1/4/19
 - For a long time, I've been thinking of Forelle's core parsing algorithm as O(N^2) because you can end up looking at each token for each symbol. However, after seeing how Packrat parsing performance is analyzed, I think that this might more properly be called O(NM) where M is the number of symbols. I think this is considered linear in parsing. One thing I haven't thought through is how the nesting of the recursive descent parsing gets factored in (e. g. for one token we may make M nested calls even without having to look ahead).
+
+IDEAS 1/8/19
+- Dealing with hidden left recursion through rewriting: When we have hidden left recursion (e. g. E -> A E x where A is nullable), we'd like to rewrite to remove it as something like E -> E' x { Parse as E -> A x }, E -> A' x { Parse as E -> A x }, E' -> E { Parse as A() }, A' -> (all non-nullable derivations of A) { Parse as ... }. The question is, how do we know nullable and non-nullable derivations of A? We can do it as follows: first, if A is multiple symbols, combine to one symbol. Then construct a potential parse node for each rule of A. Then repeat: if multiple nodes are nullable, there are multiple null derivations => error (this is an ambiguity error which I think we can resolve later via
+rewrite if we have a resolution). If any node is null, remove it and return the rest as the non-null derivations. Else, take the one nullable node and expand it by
+blowing out each symbol's rules to get a new node set. Repeat until it terminates (it eventually will because it will find the null derivation).
