@@ -33,8 +33,8 @@ namespace Forelle.Parsing.Preprocessing
 
         private IEnumerable<string> GetSymbolRecursionErrors()
         {
+            // first, determine which symbols are recursively defined
             var nonRecursive = new HashSet<NonTerminal>();
-
             bool changed;
             do
             {
@@ -44,7 +44,7 @@ namespace Forelle.Parsing.Preprocessing
                 {
                     // a symbol is non-recursive if it has any rule whose symbols are all non-recursive. A symbol is non-recursive
                     // if it is a Token, an established non-recursive NonTerminal, or an undefined NonTerminal (to avoid confusing errors)
-                    if (symbolRules.Any(r => r.Symbols.All(s => s is Token || (s is NonTerminal n && (nonRecursive.Contains(n) || !this._rulesByProduced[n].Any())))))
+                    if (symbolRules.Any(r => r.Symbols.All(s => !(s is NonTerminal n) || nonRecursive.Contains(n) || !this._rulesByProduced.Contains(n))))
                     {
                         changed |= nonRecursive.Add(symbolRules.Key);
                     }
@@ -53,8 +53,26 @@ namespace Forelle.Parsing.Preprocessing
             while (changed);
 
             return this._rulesByProduced.Select(g => g.Key)
-                .Where(s => !nonRecursive.Contains(s))
+                // we don't want to report about all non-recursive symbols since some may not be self-recursive
+                // but rather are dependent on self-recursive symbols. Thus, we consider only recursively defined symbols
+                // that are also self-recursive
+                .Where(s => !nonRecursive.Contains(s) && IsSelfRecursive(s))
                 .Select(s => $"All rules for symbol '{s}' recursively contain '{s}'");
+
+            // determines whether a derivation of the given symbol can contain that symbol
+            bool IsSelfRecursive(NonTerminal symbol)
+            {
+                var visited = new HashSet<Rule>();
+                return CanExpandTo(symbol, symbol);
+
+                bool CanExpandTo(NonTerminal toExpand, NonTerminal target)
+                {
+                    return this._rulesByProduced[toExpand].Any(
+                        r => visited.Add(r) // don't get stuck in recursion loops (and also don't bother expanding any rule twice)
+                            && (r.Symbols.Contains(target) || r.Symbols.Any(s => s is NonTerminal n && CanExpandTo(n, target)))
+                    );
+                }
+            }
         }
 
         private IEnumerable<string> GetRightAssociativityErrors()

@@ -73,7 +73,13 @@ namespace Forelle.Tests.Parsing.Preprocessing
                 { N, O }, // O aliases N
                 { O, N }, // N aliases O
                 { O, P }, // P also aliases O, but is not part of the cycle 
-                { P, Plus }
+                { P, Plus },
+
+                { I, Plus, A }, // I references self-recursive symbol A but is not itself self recursive because A does not reference I
+
+                // Q and R are mutually self-recursive
+                { Q, Plus, R },
+                { R, Minus, Q },
             };
 
             GrammarValidator.Validate(rules, out var errors).ShouldEqual(false);
@@ -85,6 +91,8 @@ namespace Forelle.Tests.Parsing.Preprocessing
                 "All rules for symbol 'A' recursively contain 'A'",
                 "All rules for symbol 'B' recursively contain 'B'",
                 "All rules for symbol 'C' recursively contain 'C'",
+                "All rules for symbol 'Q' recursively contain 'Q'",
+                "All rules for symbol 'R' recursively contain 'R'",
                 "Rule Exp -> ID ID { REQUIRE 'A', REQUIRE !'A' } references variable 'A' multiple times. A rule may contain at most one check or one action for a variable",
                 "Parser state variable 'A' is missing the following actions: [PUSH, SET, POP]. Each parser state variable must define [PUSH, SET, POP, REQUIRE]",
                 "Rule L -> D { RIGHT ASSOCIATIVE } must have at least two symbols to be a right-associative binary rule",

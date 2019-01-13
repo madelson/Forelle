@@ -39,7 +39,7 @@ namespace Forelle.Parsing.Preprocessing
             //
             // TWO REWRITES
             // E = E1 (+ E)?
-            // E1 = E0 (* E)?
+            // E1 = E0 (* E1)?
             // E0 = -E0 | ID
 
             // pick the highest precedence left-recursive rule we can find

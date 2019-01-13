@@ -377,12 +377,13 @@ namespace Forelle.Tests.Parsing.Construction
                 throw new ArgumentException("Invalid grammar: " + string.Join(Environment.NewLine, validationErrors));
             }
 
-            var withoutAliases = AliasHelper.InlineAliases(rules, AliasHelper.FindAliases(rules));
+            var (withoutMultipleNullDerivations, multipleNullDerivationErrors) = MultipleNullDerivationRewriter.Rewrite(rules, ambiguityResolutions);
+            var withoutAliases = AliasHelper.InlineAliases(withoutMultipleNullDerivations, AliasHelper.FindAliases(withoutMultipleNullDerivations));
             var withoutLeftRecursion = LeftRecursionRewriter.Rewrite(withoutAliases);
             var withStartSymbols = StartSymbolAdder.AddStartSymbols(withoutLeftRecursion);
 
             var (nodes, errors) = ParserGenerator.CreateParser(withStartSymbols, ambiguityResolutions);
-            return (parser: nodes != null ? new TestingParser(nodes) : null, errors);
+            return (parser: nodes != null ? new TestingParser(nodes) : null, multipleNullDerivationErrors.Concat(errors).ToList());
         }
 
         internal static string ToGroupedTokenString(SyntaxNode node)

@@ -80,5 +80,24 @@ namespace Forelle.Tests.Parsing
             firstFollow.NextOf(new RuleRemainder(argListTailRule, start: 3))
                 .CollectionShouldEqual(firstFollow.FollowOf(ArgList));
         }
+
+        // see https://cs.stackexchange.com/questions/102712/whats-the-right-way-to-think-about-a-cfg-symbol-with-an-infinite-null-derivatio/102739#102739
+        [Test]
+        public void TestInfiniteNullDerivation()
+        {
+            var rules = new Rules
+            {
+                { A, A, B },
+                { A, Plus },
+                { B, Minus },
+                { B }
+            };
+
+            var firstFollow = FirstFollowCalculator.Create(rules);
+            CollectionAssert.AreEquivalent(new[] { Plus }, firstFollow.FirstOf(A));
+            CollectionAssert.AreEquivalent(new[] { Minus, null }, firstFollow.FirstOf(B));
+            CollectionAssert.AreEquivalent(new[] { Minus }, firstFollow.FollowOf(A));
+            CollectionAssert.AreEquivalent(new[] { Minus }, firstFollow.FollowOf(B));
+        }
     }
 }

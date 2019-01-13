@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Medallion.Collections;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -151,6 +152,29 @@ namespace Forelle
             }
 
             return parts.Count > 0 ? $"{{ {string.Join(", ", parts)} }}" : string.Empty;
+        }
+
+        public override bool Equals(object obj)
+        {
+            return this == obj
+                || (
+                    obj is ExtendedRuleInfo that
+                        && this.IsRightAssociative == that.IsRightAssociative
+                        && (this.MappedRules != null ? that.MappedRules != null && this.MappedRules.SequenceEqual(that.MappedRules) : that.MappedRules == null)
+                        && this.ParserStateRequirements.CollectionEquals(that.ParserStateRequirements)
+                        && this.ParserStateActions.CollectionEquals(that.ParserStateActions)
+                );
+        }
+
+        public override int GetHashCode()
+        {
+            return (
+                    this.IsRightAssociative,
+                    EqualityComparers.GetSequenceComparer<Rule>().GetHashCode(this.MappedRules),
+                    EqualityComparers.GetCollectionComparer<ParserStateVariableRequirement>().GetHashCode(this.ParserStateRequirements),
+                    EqualityComparers.GetCollectionComparer<ParserStateVariableAction>().GetHashCode(this.ParserStateActions)
+                )
+                .GetHashCode();
         }
     }
 

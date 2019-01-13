@@ -67,5 +67,51 @@ namespace Forelle.Tests
             Assert.Throws<ArgumentOutOfRangeException>(() => rule.Skip(1).Skip(-1));
             Assert.Throws<ArgumentOutOfRangeException>(() => rule.Skip(3).Skip(1));
         }
+
+        [Test]
+        public void ExtendedInfoImplementsValueEquality()
+        {
+            var a = ExtendedRuleInfo.Empty;
+            var b = ExtendedRuleInfo.Unmapped;
+            CheckEquality(false);
+
+            a = a.Update(mappedRules: Array.Empty<Rule>());
+            CheckEquality(true);
+
+            a = a.Update(mappedRules: new[] { new Rule(Exp), new Rule(A, B) });
+            CheckEquality(false);
+
+            b = b.Update(mappedRules: new[] { new Rule(Exp), new Rule(A, B) });
+            CheckEquality(false); // rules have reference equality
+
+            b = b.Update(mappedRules: a.MappedRules.Reverse().ToArray());
+            CheckEquality(false);
+
+            b = b.Update(mappedRules: a.MappedRules);
+            CheckEquality(true);
+
+            a = a.Update(isRightAssociative: true);
+            CheckEquality(false);
+
+            b = b.Update(isRightAssociative: true, parserStateRequirements: new[] { new ParserStateVariableRequirement("a"), new ParserStateVariableRequirement("b") });
+            CheckEquality(false);
+
+            a = a.Update(parserStateRequirements: new[] { new ParserStateVariableRequirement("b"), new ParserStateVariableRequirement("a") });
+            CheckEquality(true);
+
+            a = a.Update(parserStateActions: new[] { new ParserStateVariableAction("a", ParserStateVariableActionKind.Pop) });
+            b = b.Update(parserStateActions: new[] { new ParserStateVariableAction("a", ParserStateVariableActionKind.Pop), new ParserStateVariableAction("b", ParserStateVariableActionKind.Push) });
+            CheckEquality(false);
+
+            a = a.Update(parserStateActions: b.ParserStateActions.Reverse());
+            CheckEquality(true);
+
+            void CheckEquality(bool shouldEqual)
+            {
+                Equals(a, b).ShouldEqual(shouldEqual);
+                Equals(b, a).ShouldEqual(shouldEqual);
+                Equals(a.GetHashCode(), b.GetHashCode()).ShouldEqual(shouldEqual);
+            }
+        }
     }
 }

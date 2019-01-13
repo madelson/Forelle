@@ -56,12 +56,19 @@ namespace Forelle.Tests.Parsing
 
         public static PotentialParseNode Parse(string text, IReadOnlyCollection<Rule> rules)
         {
-            var (tokens, names) = Lex(text);
-
-            lock (Instance._parser) // since TestingParser is not thread-safe
+            try
             {
-                Instance._parser.Parse(tokens, Node);
-                return Bind(Instance._parser.Parsed, new Queue<string>(names), rules);
+                var (tokens, names) = Lex(text);
+
+                lock (Instance._parser) // since TestingParser is not thread-safe
+                {
+                    Instance._parser.Parse(tokens, Node);
+                    return Bind(Instance._parser.Parsed, new Queue<string>(names), rules);
+                }
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Failed to parse '{text}'", ex);
             }
         }
 

@@ -10,6 +10,8 @@ namespace Forelle.Parsing
     {
         public static bool HasTrailingCursor(this PotentialParseNode node)
         {
+            if (node == null) { throw new ArgumentNullException(nameof(node)); }
+
             return node is PotentialParseParentNode parent
                 ? node.CursorPosition == parent.Children.Count
                 : node.CursorPosition == 1;
@@ -87,6 +89,13 @@ namespace Forelle.Parsing
 
             return Traverse.DepthFirst(node, n => n is PotentialParseParentNode parent ? parent.Children : Enumerable.Empty<PotentialParseNode>())
                 .OfType<PotentialParseLeafNode>();
+        }
+
+        public static int CountNodes(this PotentialParseNode node)
+        {
+            if (node == null) { throw new ArgumentNullException(nameof(node)); }
+
+            return node is PotentialParseParentNode parent ? parent.Children.Sum(CountNodes) : 1;
         }
     }
 }

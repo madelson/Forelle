@@ -74,6 +74,7 @@
     <Compile Include="Parsing\Preprocessing\GrammarValidatorTest.cs" />
     <Compile Include="Parsing\Preprocessing\LeftRecursionRewriterTest.cs" />
     <Compile Include="Parsing\Construction\ParserGeneratorTest.cs" />
+    <Compile Include="Parsing\Preprocessing\MultipleNullDerivationRewriterTest.cs" />
     <Compile Include="Parsing\Preprocessing\StartSymbolAdderTest.cs" />
     <Compile Include="Parsing\Construction\TestingParser.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

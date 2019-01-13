@@ -721,13 +721,7 @@ namespace Forelle.Parsing.Construction.Ambiguity
                 }
 
                 // if one state is less complex (fewer total nodes), then that state is better (LESS)
-                int CountNodes(PotentialParseNode node)
-                {
-                    return node is PotentialParseParentNode parent ? 1 + parent.Children.Sum(CountNodes)
-                        : node is PotentialParseLeafNode leaf ? 1
-                        : throw new ArgumentException("Unexpected node type");
-                }
-                var nodeCountComparison = (CountNodes(this.First.Node) + CountNodes(this.Second.Node)).CompareTo(CountNodes(that.First.Node) + CountNodes(that.Second.Node));
+                var nodeCountComparison = (this.First.Node.CountNodes() + this.Second.Node.CountNodes()).CompareTo(that.First.Node.CountNodes() + that.Second.Node.CountNodes());
                 if (nodeCountComparison != 0)
                 {
                     return nodeCountComparison;

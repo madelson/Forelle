@@ -56,7 +56,9 @@ namespace Forelle.Tests
             M = new NonTerminal("M"),
             N = new NonTerminal("N"),
             O = new NonTerminal("O"),
-            P = new NonTerminal("P");
+            P = new NonTerminal("P"),
+            Q = new NonTerminal("Q"),
+            R = new NonTerminal("R");
 
         public static NonTerminal StartOf(NonTerminal symbol, IEnumerable<Rule> rules) => rules.Select(r => r.Produced)
             .First(s => s.SyntheticInfo is StartSymbolInfo i && i.Symbol == symbol);
