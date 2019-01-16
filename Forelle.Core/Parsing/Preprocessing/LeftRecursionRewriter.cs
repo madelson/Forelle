@@ -88,23 +88,12 @@ namespace Forelle.Parsing.Preprocessing
 
             this._rulesByProduced[leftRecursiveRule.Produced].Remove(leftRecursiveRule);
             
-            // a rule is left-associative if it is binary and is not marked as right-associative
-            var isLeftAssociative = !leftRecursiveRule.ExtendedInfo.IsRightAssociative
+            var isRightAssociativeBinary = leftRecursiveRule.ExtendedInfo.IsRightAssociative
                 && IsSimpleRightRecursive(leftRecursiveRule);
-            if (isLeftAssociative)
+            if (isRightAssociativeBinary)
             {
-                // for left-associativity, we do:
-                // E -> E + E
-                // E -> T List<+T>
-                // every parse of "+ T" maps to E + E rule
-                var suffixSymbol = NonTerminal.CreateSynthetic(
-                    $"({string.Join(" ", leftRecursiveRule.Symbols.Skip(1).Take(leftRecursiveRule.Symbols.Count - 2).Append(remainderSymbol))})",
-                    new RewrittenLeftRecursiveSymbolInfo(leftRecursiveRule, RewrittenLeftRecursiveSymbolKind.LeftAssociativeSuffixListElement)
-                );
-                var suffixListSymbol = NonTerminal.CreateSynthetic(
-                    $"List<{suffixSymbol}>",
-                    new RewrittenLeftRecursiveSymbolInfo(leftRecursiveRule, RewrittenLeftRecursiveSymbolKind.LeftAssociativeSuffixList)
-                );
+                // e. g. for E -> E ? E : E, we have E -> T | E -> T ? E : E
+                // E -> T is unmapped, while E -> T ? E : E maps to the original rule
 
                 this._rulesByProduced[leftRecursiveRule.Produced].InsertRange(
                     // the new rules are inserted at the front since we removed all rules higher-priority than
@@ -112,9 +101,48 @@ namespace Forelle.Parsing.Preprocessing
                     0,
                     new[]
                     {
-                        // E -> T List<+T>
-                        new Rule(leftRecursiveRule.Produced, new[] { remainderSymbol, suffixListSymbol }, leftRecursiveRule.ExtendedInfo.Update(mappedRules: Array.Empty<Rule>()))
+                        new Rule(
+                            leftRecursiveRule.Produced,
+                            new[] { remainderSymbol },
+                            ExtendedRuleInfo.Unmapped
+                        ),
+                        new Rule(
+                            leftRecursiveRule.Produced,
+                            leftRecursiveRule.Symbols.Select((s, i) => i == 0 ? remainderSymbol : s),
+                            leftRecursiveRule.ExtendedInfo.Update(mappedRules: new[] { leftRecursiveRule })
+                        )
                     }
+                );
+            }
+            else
+            {
+                // for left-associativity, we do:
+                // E -> E + E
+                // E -> T List<+T>
+                // where every parse of "+ T" maps to E + E rule
+                
+                // note that this also accounts for non-binary rules like E -> E ++, which we convert to
+                // E -> T List(++) where every parse of ++ maps to the E -> E ++ rule
+
+                var suffixSymbols = leftRecursiveRule.Symbols
+                    .Select((s, index) => s == leftRecursiveRule.Produced && index == leftRecursiveRule.Symbols.Count - 1 ? remainderSymbol : s)
+                    .Skip(1)
+                    .ToList();
+                var suffixSymbol = NonTerminal.CreateSynthetic(
+                    $"{(suffixSymbols.Count > 1 ? "(" : string.Empty)}{string.Join(" ", suffixSymbols)}{(suffixSymbols.Count > 1 ? ")" : string.Empty)}",
+                    new RewrittenLeftRecursiveSymbolInfo(leftRecursiveRule, RewrittenLeftRecursiveSymbolKind.LeftAssociativeSuffixListElement)
+                );
+                var suffixListSymbol = NonTerminal.CreateSynthetic(
+                    $"List<{suffixSymbol}>",
+                    new RewrittenLeftRecursiveSymbolInfo(leftRecursiveRule, RewrittenLeftRecursiveSymbolKind.LeftAssociativeSuffixList)
+                );
+
+                this._rulesByProduced[leftRecursiveRule.Produced].Insert(
+                    // the new rule is inserted at the front since we removed all rules higher-priority than
+                    // the left-recursive rule. Thus we are replacing the first rule in the list
+                    0,
+                    // E -> T List<+T>
+                    new Rule(leftRecursiveRule.Produced, new[] { remainderSymbol, suffixListSymbol }, leftRecursiveRule.ExtendedInfo.Update(mappedRules: Array.Empty<Rule>()))
                 );
 
                 this._rulesByProduced.Add(
@@ -133,35 +161,7 @@ namespace Forelle.Parsing.Preprocessing
                     // +T -> + T
                     new List<Rule>
                     {
-                        new Rule(
-                            suffixSymbol, 
-                            leftRecursiveRule.Symbols.Select((s, i) => i == leftRecursiveRule.Symbols.Count - 1 ? remainderSymbol : s).Skip(1),
-                            ExtendedRuleInfo.Empty.Update(mappedRules: new[] { leftRecursiveRule })
-                        )
-                    }
-                );
-            }
-            else
-            {
-                // e. g. for E -> E ? E : E, we have E -> T | E -> T ? E : E
-                // E -> T is unmapped, while E -> T ? E : E maps to the original rule
-
-                this._rulesByProduced[leftRecursiveRule.Produced].InsertRange(
-                    // the new rules are inserted at the front since we removed all rules higher-priority than
-                    // the left-recursive rule. Thus we are replacing the first rule in the list
-                    0,
-                    new[]
-                    {
-                        new Rule(
-                            leftRecursiveRule.Produced, 
-                            new[] { remainderSymbol }, 
-                            ExtendedRuleInfo.Unmapped
-                        ),
-                        new Rule(
-                            leftRecursiveRule.Produced, 
-                            leftRecursiveRule.Symbols.Select((s, i) => i == 0 ? remainderSymbol : s),
-                            leftRecursiveRule.ExtendedInfo.Update(mappedRules: new[] { leftRecursiveRule })
-                        )
+                        new Rule(suffixSymbol, suffixSymbols, ExtendedRuleInfo.Empty.Update(mappedRules: new[] { leftRecursiveRule }))
                     }
                 );
             }
