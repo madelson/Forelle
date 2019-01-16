@@ -35,9 +35,18 @@ rewrite if we have a resolution). If any node is null, remove it and return the 
 blowing out each symbol's rules to get a new node set. Repeat until it terminates (it eventually will because it will find the null derivation).
 
 IDEAS 1/13/19
-- We can deal with hidden left recursion at the expense of fully-ordered event-driven parsing. Let's say we have E -> N E x where N is nullable. We can split into two rules E -> E x | N! E x, where we no longer have hidden left recursion but we've lost the fact that we should be parsing an N() before the E in E -> E x. For a parser that generates an AST, this isn't an issue so long as we can annotate the rule with something that says to just pop in the empty N() (although this could mess with trivia assignment). For event driven parsing it is messier we don't know we're parsing N until after we've moved on. Potentially we could solve this via a lookahead (for x)... need to think further about this
+- We can deal with hidden left recursion at the expense of fully-ordered event-driven parsing. Let's say we have E -> N E x where N is nullable. We can split into two rules E -> E x | N! E x, where we no longer have hidden left recursion but we've lost the fact that we should be parsing an N() before the E in E -> E x. For a parser that generates an AST, this isn't an issue so long as we can annotate the rule with something that says to just pop in the empty N() (this won't mess with trivia assignment since trivia attach to tokens, not nullables). For event driven parsing it is messier we don't know we're parsing N until after we've moved on. Potentially we could solve this via a lookahead (for x). The lookahead approach for right associative is:
+	- Start with E -> N E ^ E
+	- Transform to E -> N() T (^ E)? where (^ E) parses as E -> N E ^ E
+	- Split out to E -> N() T ^ E parse as E -> N E ^ E | T parse as {}
+Left-associative and non-binary left-recursive (e. g. E -> E ++) can't use this technique (as far as I can tell) because the N() symbols need to get parsed before any other symbols.
+	
 - When we eventually get to our text-representation of grammars, we should have named everything. Like:
 Expression: 
 	Add: Expression Left Operand Plus Expression Right
 This will allow us to generate a nicely-named AST
 - For search-based parsing, when we've narrowed it down to just one rule in a context we shouldn't necessarily declare victory. For example, let's say we have A -> x B C D. We could immediately request solutions for B and C, but this misses the opportunity to lift. Instead, we might first look at x (it's a token so we're good), then B (which maybe we've already solved for or assumed), then C (which would be a new dependency). In that case, we can say that we have a solution that handles parsing x B and then points to a context for A -> ... C D using a rule remainder. When solving that context we could consider both lifting C and solving C.
+
+IDEAS 1/16/19
+- We could introduce lookahead predicates like what PEGs have (!e and &e) in particular. The risk is that these make grammar rewrites more challenging. We can deal with them when constructing discriminators by just passing over them (like nullable symbols) but adding them to a list to be checked at the start of the lookahead.
+An advantage of these is that they let you express some disambiguations like how C# deals with generics (looking ahead for a subset of tokens)
