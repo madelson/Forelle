@@ -198,5 +198,28 @@ namespace Forelle.Tests
             var (parser, errors) = ParserGeneratorTest.CreateParser(rules);
             Assert.IsEmpty(errors);
         }
+
+        [Test]
+        public void ExpectFailure_LongerLookaheadRequired()
+        {
+            // this is an interesting case where an LR(2) parser would be fine but we currently fail.
+            // Basically, we get a shift/reduce conflict when looking to either extend our list of "+ +"'s
+            // upon seeing a "+" (since it could be the "+" from an outer E + E rule). LR(2) could realize that
+            // we need to see 2 "+"'s in order to shift. Possibly lifting would solve this case as well
+            //
+            // Note that this does also 
+            // illustrate why "++" is typically a token: without this if you have both prefix and postfix increment operators
+            // then a +++++ b could be (a++) + (++b) or ((a++)++) + b or even a + (++(++b))!
+
+            var rules = new Rules
+            {
+                { Exp, Id },
+                { Exp, Exp, Plus, Plus },
+                { Exp, Exp, Plus, Exp }
+            };
+
+            var (parser, errors) = ParserGeneratorTest.CreateParser(rules);
+            Assert.IsEmpty(errors);
+        }
     }
 }
