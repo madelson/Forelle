@@ -24,7 +24,7 @@ namespace Forelle.Parsing.Construction.Ambiguity
         /// <summary>
         /// Used to keep the algorithm from hanging forever, especially in cases where there are an unbounded number of expansions that we could try
         /// </summary>
-        private const int MaxExpansionCount = 20;
+        private const int MaxExpansionCount = 20, MaxIndividualNodeExpansionCount = 15;
 
         private readonly IReadOnlyDictionary<NonTerminal, IReadOnlyList<Rule>> _rulesByProduced;
         private readonly FirstFollowLastPrecedingCalculator _firstFollowLastPreceding;
@@ -152,10 +152,17 @@ namespace Forelle.Parsing.Construction.Ambiguity
             // eventually when their is no real ambiguity and only a limitation of our algorithm (the palindrome
             // grammar is a good example). Of course, the downside is that we might not discover some real ambiguities.
             // The hope is that this number is large enough to handle practical cases
-            return state.TotalExpansionCount == MaxExpansionCount
+            return IsDeadEndBasedOnExpansionCount(state.First.ExpansionCount, state.Second.ExpansionCount)
                 || IsDeadEndBasedOnTokenMatching(state.First, state.Second)
                 || IsDeadEndBasedOnTokenMatching(state.Second, state.First);
-            
+             
+            bool IsDeadEndBasedOnExpansionCount(int firstExpansionCount, int secondExpansionCount)
+            {
+                return firstExpansionCount >= MaxIndividualNodeExpansionCount
+                    || secondExpansionCount >= MaxIndividualNodeExpansionCount
+                    || (firstExpansionCount + secondExpansionCount) >= MaxExpansionCount;
+            }
+
             // This check looks to eliminate search states based on grammatical rules. For example, if the next symbol to match
             // up in a is a "+" token but "+" can't appear in the remainder of b, then no amount of expansion will help
             bool IsDeadEndBasedOnTokenMatching(NodeState a, NodeState b)
@@ -417,13 +424,15 @@ namespace Forelle.Parsing.Construction.Ambiguity
         private sealed class NodeState
         {
             private NodeState(
-                PotentialParseParentNode node, 
+                PotentialParseParentNode node,
+                int nodeCount,
                 int cursorLeafIndex,
                 int expansionCount,
                 ImmutableLinkedList<Symbol> trailingUnmatchedSymbols,
                 ImmutableLinkedList<Symbol> leadingUnmatchedSymbols)
             {
                 this.Node = node;
+                this.NodeCount = nodeCount;
                 this.CursorLeafIndex = cursorLeafIndex;
                 this.ExpansionCount = expansionCount;
                 this.TrailingUnmatchedSymbols = trailingUnmatchedSymbols;
@@ -431,6 +440,7 @@ namespace Forelle.Parsing.Construction.Ambiguity
             }
 
             public PotentialParseParentNode Node { get; }
+            public int NodeCount { get; } // caching this is perf-critical
             public int CursorLeafIndex { get; }
             /// <summary>
             /// The number of expansions (calls to <see cref="ExpandLeaf(int, Rule)"/> and <see cref="ExpandRoot(Rule, int)"/>)
@@ -458,6 +468,7 @@ namespace Forelle.Parsing.Construction.Ambiguity
                 var cursorLeafIndex = GetCursorLeafIndex(node);
                 return new NodeState(
                     node,
+                    node.CountNodes(),
                     cursorLeafIndex,
                     expansionCount: 0,
                     // note: this could be done more efficiently, but it's not worth it because CreateInitial isn't called often
@@ -482,14 +493,14 @@ namespace Forelle.Parsing.Construction.Ambiguity
 
                 // to check for change, we only need to consider a since either both change or neither change
                 if (aTrailing.Count == a.TrailingUnmatchedSymbols.Count
-                    && aLeading.Count == b.LeadingUnmatchedSymbols.Count)
+                    && aLeading.Count == a.LeadingUnmatchedSymbols.Count)
                 {
                     return (a, b); // no change
                 }
 
                 return (
-                    new NodeState(a.Node, a.CursorLeafIndex, a.ExpansionCount, trailingUnmatchedSymbols: aTrailing, leadingUnmatchedSymbols: aLeading),
-                    new NodeState(b.Node, b.CursorLeafIndex, b.ExpansionCount, trailingUnmatchedSymbols: bTrailing, leadingUnmatchedSymbols: bLeading)
+                    new NodeState(a.Node, a.NodeCount, a.CursorLeafIndex, a.ExpansionCount, trailingUnmatchedSymbols: aTrailing, leadingUnmatchedSymbols: aLeading),
+                    new NodeState(b.Node, b.NodeCount, b.CursorLeafIndex, b.ExpansionCount, trailingUnmatchedSymbols: bTrailing, leadingUnmatchedSymbols: bLeading)
                 );
 
                 // this relies on the fact that we never move a non-terminal cursor out of TrailingUnmatchedSymbols
@@ -529,6 +540,7 @@ namespace Forelle.Parsing.Construction.Ambiguity
                 
                 return new NodeState(
                     newNode,
+                    this.NodeCount + rule.Symbols.Count, // -1 leaf, +1 parent with N new leaves
                     // it may seem like this should also move in the case where we replace the cursor leaf
                     // with a null production. However, in that case the cursor actually stays in the same
                     // absolute leaf index since the cursor is always on the first trailing leaf (or is entirely trailing)
@@ -624,6 +636,7 @@ namespace Forelle.Parsing.Construction.Ambiguity
                             }
                         )
                     ),
+                    this.NodeCount + rule.Symbols.Count, // +1 parent +(N - 1) siblings == +N
                     this.CursorLeafIndex + symbolIndex,
                     this.ExpansionCount + 1,
                     trailingUnmatchedSymbols: this.TrailingUnmatchedSymbols.AppendRange(rule.Skip(symbolIndex + 1).Symbols),
@@ -655,6 +668,8 @@ namespace Forelle.Parsing.Construction.Ambiguity
         /// </summary>
         private sealed class SearchState : IComparable<SearchState>
         {
+            private readonly double _fractionMatched;
+            
             public SearchState(
                 NodeState first,
                 NodeState second,
@@ -662,13 +677,14 @@ namespace Forelle.Parsing.Construction.Ambiguity
             {
                 (this.First, this.Second) = NodeState.Align(first, second);
                 this.Context = context;
+                // caching this upfront is perf-critical for intensive searches
+                this._fractionMatched = GetFractionMatched(this.First, this.Second);
             }
 
             public NodeState First { get; }
             public NodeState Second { get; }
             public SearchContext Context { get; }
-
-            public int TotalExpansionCount => this.First.ExpansionCount + this.Second.ExpansionCount;
+            
             public bool HasAnyTrailingCursor => this.First.HasTrailingCursor || this.Second.HasTrailingCursor;
             public bool HasUnmatchedTrailingSymbols => this.First.TrailingUnmatchedSymbols.Count > 0 || this.Second.TrailingUnmatchedSymbols.Count > 0;
             public bool HasUnmatchedLeadingSymbols => this.First.LeadingUnmatchedSymbols.Count > 0 || this.Second.LeadingUnmatchedSymbols.Count > 0;
@@ -676,22 +692,25 @@ namespace Forelle.Parsing.Construction.Ambiguity
 
             public int MaxLeafCountIncludingTrailingCursor => Math.Max(this.First.LeafCountIncludingTrailingCursor, this.Second.LeafCountIncludingTrailingCursor);
 
-            private double FractionLeavesMatched
+            private static double GetFractionMatched(NodeState first, NodeState second)
             {
-                get
-                {
-                    // we use MAX for the denominator since eventually all leaves will need to be matched up (either by eliminating the
-                    // leaf through an empty production or by matching the leaf through an expansion). Therefore, I think MAX does a better
-                    // job than SUM of accounting for the work remaining to be done (either one is arguably "correct")
-                    var totalLeafCount = 2 * Math.Max(this.First.LeafCountIncludingTrailingCursor, this.Second.LeafCountIncludingTrailingCursor);
-                    var matchedLeafCount = CountMatchedLeaves(this.First) + CountMatchedLeaves(this.Second);
-                    return matchedLeafCount / (double)totalLeafCount;
+                // we use MAX for the denominator since eventually all leaves will need to be matched up (either by eliminating the
+                // leaf through an empty production or by matching the leaf through an expansion). Therefore, I think MAX does a better
+                // job than SUM of accounting for the work remaining to be done (either one is arguably "correct")
+                var totalLeafCount = 2 * Math.Max(first.LeafCountIncludingTrailingCursor, second.LeafCountIncludingTrailingCursor);
+                var matchedLeafCount = CountMatchedLeaves(first) + CountMatchedLeaves(second);
 
-                    int CountMatchedLeaves(NodeState nodeState) => nodeState.LeafCountIncludingTrailingCursor
-                        - nodeState.LeadingUnmatchedSymbols.Count
-                        - nodeState.TrailingUnmatchedSymbols.Count
-                        - (nodeState.HasTrailingCursor ? 1 : 0);
-                }
+                // we consider the root as part of the match fraction, but we don't weight it as highly as matching a leaf
+                // because you're generally "closer" if you have an additional matched leaf than if your root matches
+                const double RootMatchWeight = 0.5;
+
+                return (matchedLeafCount + (first.Node.Symbol == second.Node.Symbol ? RootMatchWeight : 0)) / (totalLeafCount + RootMatchWeight);
+
+                int CountMatchedLeaves(NodeState nodeState) => nodeState.LeafCountIncludingTrailingCursor
+                    - nodeState.LeadingUnmatchedSymbols.Count
+                    - nodeState.TrailingUnmatchedSymbols.Count
+                    - (nodeState.HasTrailingCursor ? 1 : 0);
+
             }
 
             public int CompareTo(SearchState that)
@@ -700,7 +719,7 @@ namespace Forelle.Parsing.Construction.Ambiguity
                 // not guarantee that we arrive at the simplest answer, although in practice this seems to happen reliably
 
                 // if one state has matched a higher % of leaves, then that state is better (LESS)
-                var matchFractionComparison = that.FractionLeavesMatched.CompareTo(this.FractionLeavesMatched);
+                var matchFractionComparison = that._fractionMatched.CompareTo(this._fractionMatched);
                 if (matchFractionComparison != 0)
                 {
                     return matchFractionComparison;
@@ -712,28 +731,30 @@ namespace Forelle.Parsing.Construction.Ambiguity
                 {
                     return maxLeafCountComparison;
                 }
-
-                // if one state has matched roots, then that state is better (LESS)
-                var matchingRootCountComparison = this.HasMismatchedRoots.CompareTo(that.HasMismatchedRoots);
-                if (matchFractionComparison != 0)
-                {
-                    return matchingRootCountComparison;
-                }
-
+                
                 // if one state is less complex (fewer total nodes), then that state is better (LESS)
-                var nodeCountComparison = (this.First.Node.CountNodes() + this.Second.Node.CountNodes()).CompareTo(that.First.Node.CountNodes() + that.Second.Node.CountNodes());
+                var nodeCountComparison = (this.First.NodeCount + this.Second.NodeCount).CompareTo(that.First.NodeCount + that.Second.NodeCount);
                 if (nodeCountComparison != 0)
                 {
                     return nodeCountComparison;
                 }
+                
+                // if one state is less complex (fewer total leaves), then that state is better (LESS). This check is subtly different
+                // from the max # leaves check above. We care more about max # leaves since ultimately all those leaves need to be 
+                // matched or nulled out. However, given a match on max leaves we'd prefer fewer leaves in total since ultimately
+                // we hope to find a solution with as few leaves as possible
+                var totalLeafCountComparison = (this.First.LeafCountIncludingTrailingCursor + this.Second.LeafCountIncludingTrailingCursor)
+                    .CompareTo(that.First.LeafCountIncludingTrailingCursor + that.Second.LeafCountIncludingTrailingCursor);
+                if (totalLeafCountComparison != 0)
+                {
+                    return totalLeafCountComparison;
+                }
 
-                // we should basically never get here, but fall back to an alphabetical comparison
-                // just to guarantee a total order
-                string ToString(SearchState state) => state.First.Node.ToMarkedString() + Environment.NewLine + state.Second.Node.ToMarkedString();
-                return ToString(this).CompareTo(ToString(that));
+                // tie: no preference
+                return 0;
             }
         }
-
+        
         /// <summary>
         /// <see cref="SearchContext"/> is part of what helps us avoid duplicate work by capturing the context in which
         /// a <see cref="SearchState"/> was created. The idea is that we want to avoid reaching the same

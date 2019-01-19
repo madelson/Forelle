@@ -95,7 +95,7 @@ namespace Forelle.Parsing
         {
             if (node == null) { throw new ArgumentNullException(nameof(node)); }
 
-            return node is PotentialParseParentNode parent ? parent.Children.Sum(CountNodes) : 1;
+            return (node is PotentialParseParentNode parent ? parent.Children.Sum(CountNodes) : 0) + 1;
         }
     }
 }

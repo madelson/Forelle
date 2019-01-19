@@ -14,7 +14,14 @@ namespace Forelle.Tests
     {
         public static T ShouldEqual<T>(this T actual, T expected, string message = null)
         {
-            Assert.AreEqual(actual: actual, expected: expected, message: message);
+            var messageToUse = ((object)actual) is string actualString
+                    && ((object)expected) is string expectedString
+                    && Math.Max(actualString.Length, expectedString.Length) > 20
+                    ? (message != null ? message + Environment.NewLine : string.Empty)
+                       + string.Join(Environment.NewLine, new[] { "** Full Actual **", actualString, "** Full Expected **", expectedString })
+                    : message;
+
+            Assert.AreEqual(actual: actual, expected: expected, message: messageToUse);
             return actual;
         }
 

@@ -304,5 +304,37 @@ namespace Forelle.Tests.Parsing.Construction
 	                ..^....."
             );
         }
+
+        /// <summary>
+        /// This grammar has a non-unifiable ambiguity which is quite expensive to unify
+        /// </summary>
+        [Test]
+        public void TestExpensiveNonUnifiableAmbiguity()
+        {
+            var carrot = new Token("^");
+
+            var rules = new Rules
+            {
+                { Exp, Id },
+                { Exp, LeftParen, Exp, RightParen },
+                { Exp, Exp, Plus, Plus },
+                { Exp, Minus, Exp },
+                { new Rule(Exp, new Symbol[] { Exp, carrot, Exp }, ExtendedRuleInfo.RightAssociative) },
+                { Exp, Exp, Times, Exp },
+                { Exp, Exp, Plus, Exp },
+                { new Rule(Exp, new Symbol[] { Exp, QuestionMark, Exp, Colon, Exp }, ExtendedRuleInfo.RightAssociative) }
+            };
+
+            var (parser, errors) = ParserGeneratorTest.CreateParser(rules);
+            errors.Count.ShouldEqual(1);
+            Console.WriteLine(errors[0]);
+            errors[0].ShouldEqualIgnoreIndentation(@"
+                Unable to distinguish between the following parse trees upon encountering token '+':
+	                ""`List<`(+ +)>""(""`(+ +)"" ""`List<`(+ +)>"")
+                    ................^........................
+                    ""`List<`(+ +)>""()
+                    .................^ "
+            );
+        }
     }
 }
