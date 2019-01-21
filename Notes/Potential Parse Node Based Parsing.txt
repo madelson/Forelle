@@ -1,0 +1,101 @@
+So far, we've been thinking of discriminator symbols as a lookahead mechanism.
+
+However, it seems to me that what is really happening with a discriminator is that you are simply specializing the current parse.
+
+When you are considering a parsing context like E -> A x | B y, another way to see it is that you're considering E(A x) vs. E(B y). Let's say that we have A -> + ID | - ID and B -> + y | x. In this case, an LL(1) parser gets stuck on lookahead +. A Forelle parser, though, considers that in that world you are now specializing the decision to between E(A(+ ID) x) and E(B(+ y) y). With this change, we can now see that an additional symbol of lookahead allows us to proceed. Not only that, but we could even process the parse in a way that still only looks ahead by one symbol at a time. Ultimately we'll reach the end and we know the exact parse tree that we must build from the list of shifted symbols!
+
+In the discriminator world, we look for cases where discriminator expansion leads to self-prefixing. I think the equivalent in this world is looking for repeated sets of subtrees. Sometimes, you've already considered a subtree as its own context in which case you can just reference that. Other times, though, you may find that the subtree was never considered independently (see examples below). In that case, we need to solve for the subtree (can be a lookpast solution) and then backtrack to where the subtree was first introduced and insert a reference to that solution.
+
+When we are looking ahead, we may find that there is a common non-terminal. So far, we've been solving this using a common prefix methodology. Here, we'd attempt to solve that non-terminal as its own context. If it works (lookpast not OK), then great, just "shift" that non-terminal. If it doesn't work due to reduce/reduce, then we've found a real ambiguity. If it doesn't work due to shift-reduce, though, then we can treat it like any other discriminator case (this is what we previously referred to as "lifting". 
+
+One of the most promising aspects of this technique is that we don't have to back-track and re-parse once we figure out where to go. The hope is that whenever we delegate off to another parsing action it is responsible for shifting and reducing it's top-level symbols / rules. When a discriminator is used, it's actually the same thing, we just have a more complex parse tree to reduce as opposed to a single rule to process. For example, when we finish parsing a context like A(B(E ;) ;), then we know that we have E ; ; shifted; we need to pop the trailing ; onto another stack, then reduce by B -> E ;, then re-shift the ;, then reduce by A -> B ;.
+
+Two things make this more challenging. The first is that, for event-based parsing, we want to issue our reductions in depth-first order. Say we had A(B(;) ; E). In this case we'd naively parse E before B, but really the B event should come first. A way to handle this would be for any complex parsing context like this to flip a flag which causes events to buffer and then issue them all at the end in the right order. The cool thing is that this could actually help for hidden left recursion too!
+
+The more challenging thing is when we have lookpast contexts embedded. The reason this is hard is that we don't know how to reduce them until the end. My though is that we can solve this by pushing synthetic start and end symbols that wrap the region in quesiton. This makes it easy to go back later and construct the right tree.
+
+**** Let's consider some examples ****
+
+==== 1. Statement / List conflict ====
+S -> E ;
+E -> ID
+E -> { EL }
+E -> { S SL }
+EL ->
+EL -> E EL
+SL -> S SL
+
+The conflict comes when considering E({ EL }) vs E({ S SL }) on {. 
+
+First, we shift the {:
+E({. EL })
+E({. S SL })
+
+Now, we have a conflict ID and {. 
+
+We'll start with ID since it's easier:
+E({ E(ID.) EL })
+E({ S(E(ID.) ;) SL })
+This is done since the ; gives us a deterministic way of choosing.
+
+Now, consider {:
+E({ E({. EL }) })
+E({ S({. S SL}) SL })
+We've seen this subtree set before and we constructed a (recursive) parsing action for it. Furthermore: just use that => this branch completes as well.
+
+==== 2. A vs. B lookpast conflict ====
+S -> A +
+S -> B -
+A -> [ A ]
+A -> 
+B -> [ B ]
+B -> 
+
+We get a conflict with S(A([. A ]) +) vs S(B([. B ]) -) on [.
+
+When we shift another [, we get:
+S(A([ A([. A ]) ]) +)
+S(B([ B([. B ]) ]) -)
+We've seen this subtree set before, but in this case we haven't generated a node for it because it was wrapped in the context of another tree. Therefore we need to backtrack to where we generated that subtree set and try to build a parsing action for it:
+
+A([. A ])
+B([. B ])
+This goes recursive on shifting [, and gets a reduce/reduce conflict on shifting ]. Because this is reduce/reduce, we can't consider it fully solved but it allows us to "look past" A and B to consider:
+S(A. +)
+S(B. -)
+This is solvable! To parse this in one pass without backtracking, we need to have captured more from our A/B lookpast than simply the shifted tokens, but not 100% clear what this is.
+
+==== 3. A vs. B complex lookpast ===
+S -> A +
+S -> B -
+A -> [ A ]
+A -> 
+B -> [ [ B ] ]
+B -> 
+
+We start with a conflict on S(A([. A ]) +) vs S(B([. [ B ] ]) -) on [
+
+When we expand we get:
+S(A([ A([. A ]) ]) +)
+S(B([ B([ [. B ] ]) ]) -)
+
+This is still a unique subtree set. We've now added a reduce/reduce conflict on ], though. We expand again:
+S(A([ A([ A([. A ]) ]) ]) +)
+S(B([ B([ [ B([. [ B ] ]) ] ]) ]) -)
+
+Here we do see a matching subtree set, so we can go back to where that first appeared and look past it. 
+
+==== 4. Lifting required ====
+A -> B ;
+B -> 
+B -> ;
+
+Here we have A(B ;) so we will try parsing B alone.
+
+We immediately hit a shift/reduce conflict on ; with B(;.) vs. B(). => return that info
+
+Now we treat as discriminator with:
+A(B(; .) ;)
+A(B() ;.)
+
+This is easily solved!
