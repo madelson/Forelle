@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Linq;
+using System.Collections.Immutable;
 
 namespace Forelle
 {
@@ -40,5 +41,29 @@ namespace Forelle
             key = keyValuePair.Key;
             value = keyValuePair.Value;
         }
+
+        public static IEnumerable<TKey> Keys<TKey, TValue>(this ILookup<TKey, TValue> lookup)
+        {
+            return (lookup ?? throw new ArgumentNullException(nameof(lookup)))
+                .Select(g => g.Key);
+        }
+
+        // todo clean up
+        //public static ImmutableHashSet<T> RemoveAll<T>(this ImmutableHashSet<T> set, Func<T, bool> predicate)
+        //{
+        //    if (set == null) { throw new ArgumentNullException(nameof(set)); }
+        //    if (predicate == null) { throw new ArgumentNullException(nameof(predicate)); }
+
+        //    ImmutableHashSet<T>.Builder builder = null;
+        //    foreach (var item in set)
+        //    {
+        //        if (predicate(item))
+        //        {
+        //            (builder ?? (builder = set.ToBuilder())).Remove(item);
+        //        }
+        //    }
+
+        //    return builder?.ToImmutable() ?? set;
+        //}
     }
 }
