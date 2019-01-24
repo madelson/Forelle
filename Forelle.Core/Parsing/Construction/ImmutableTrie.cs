@@ -88,6 +88,7 @@ namespace Forelle.Parsing.Construction
                 return this.Update(values: this.Values.Add(value));
             }
 
+            // todo we could make this faster by taking in ref TEnumerator and having an Add/Get overload for List and ImmutableArray
             public ImmutableHashSet<TValue> Get(IEnumerator<TKey> keys, bool includePrefixValues)
             {
                 if (keys.MoveNext())
