@@ -30,26 +30,30 @@ namespace Forelle.Parsing.Construction.New2
             this._stateStack.Push(ParserGeneratorState.Empty);
         }
 
-        public static void Generate(IReadOnlyList<Rule> rules)
+        public static (IReadOnlyDictionary<StartSymbolInfo, ParsingContext> startContexts, IReadOnlyDictionary<ParsingContext, ParsingAction> contextActions) Generate(IReadOnlyList<Rule> rules)
         {
             var generator = new ParserGenerator(rules);
-            generator.Solve();
+            return generator.Solve();
         }
 
-        private void Solve()
+        private (IReadOnlyDictionary<StartSymbolInfo, ParsingContext> startContexts, IReadOnlyDictionary<ParsingContext, ParsingAction> contextActions) Solve()
         {
             var startSymbolContexts = this._defaultParsingContexts
-                .Where(kvp => kvp.Key.SyntheticInfo is StartSymbolInfo)
-                .Select(kvp => kvp.Value);
+                .Select(kvp => (startInfo: kvp.Key.SyntheticInfo as StartSymbolInfo, context: kvp.Value))
+                .Where(t => t.startInfo != null)
+                .ToDictionary(t => t.startInfo, t => t.context);
             
-            foreach (var startSymbolContext in startSymbolContexts)
+            foreach (var startSymbolContext in startSymbolContexts.Values)
             {
                 var result = this.TrySolve(startSymbolContext);
                 if (!result.IsSuccessful)
                 {
                     throw new NotImplementedException();
                 }
+                Invariant.Require(this._stateStack.Count == 1 && !this._stateStack.Peek().HasPendingContexts);
             }
+
+            return (startSymbolContexts, this._stateStack.Single().SolvedContexts);
         }
 
         private ParserGenerationResult TrySolve(ParsingContext context)
@@ -168,6 +172,7 @@ namespace Forelle.Parsing.Construction.New2
             GatherNextSetFromCursor(node);
             if (result.Contains(null))
             {
+                result.Remove(null);
                 result.UnionWith(this._firstFollow.FollowOf(node.Rule));
             }
             return result.ToImmutable();
@@ -263,7 +268,7 @@ namespace Forelle.Parsing.Construction.New2
                     {
                         var child = parent.Children[i];
                         var updatedChild = Update(child, childBaseLeafIndex);
-                        if (updatedChild != child && newChildren != null)
+                        if (updatedChild != child && newChildren == null)
                         {
                             newChildren = new PotentialParseNode[parent.Children.Count];
                             for (var j = 0; j < i; ++j)

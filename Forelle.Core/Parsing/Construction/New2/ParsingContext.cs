@@ -8,23 +8,15 @@ namespace Forelle.Parsing.Construction.New2
     internal sealed class ParsingContext
     {
         private int _cachedHashCode;
-
-        public ParsingContext(PotentialParseParentNode node, IEnumerable<Token> lookaheadTokens)
-        {
-            this.Nodes = ImmutableHashSet.Create<PotentialParseParentNode>(
-                PotentialParseNodeWithCursorComparer.Instance, 
-                node ?? throw new ArgumentNullException(nameof(node))
-            );
-            this.LookaheadTokens = lookaheadTokens.ToImmutableHashSet();
-            VerifyNonEmptyAndAllNonNull(this.LookaheadTokens, nameof(lookaheadTokens));
-        }
-
+        
         public ParsingContext(IEnumerable<PotentialParseParentNode> nodes, IEnumerable<Token> lookaheadTokens)
         {
             this.Nodes = nodes.ToImmutableHashSet<PotentialParseParentNode>(PotentialParseNodeWithCursorComparer.Instance);
-            VerifyNonEmptyAndAllNonNull(this.Nodes, nameof(nodes));
+            if (this.Nodes.IsEmpty) { throw new ArgumentException("may not be empty", nameof(nodes)); }
+            if (this.Nodes.Contains(null)) { throw new ArgumentException("may not contain null", nameof(nodes)); }
+
             this.LookaheadTokens = lookaheadTokens.ToImmutableHashSet();
-            VerifyNonEmptyAndAllNonNull(this.LookaheadTokens, nameof(lookaheadTokens));
+            if (this.LookaheadTokens.Contains(null)) { throw new ArgumentException("may not contain null", nameof(nodes)); }
         }
 
         public ImmutableHashSet<PotentialParseParentNode> Nodes { get; }
@@ -47,12 +39,6 @@ namespace Forelle.Parsing.Construction.New2
             }
 
             return this._cachedHashCode;
-        }
-
-        private static void VerifyNonEmptyAndAllNonNull<T>(ImmutableHashSet<T> set, string parameterName) where T : class
-        {
-            if (set.IsEmpty) { throw new ArgumentException("may not be empty", parameterName); }
-            if (set.Contains(null)) { throw new ArgumentException("may not contain null", parameterName); }
         }
     }
 }

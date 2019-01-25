@@ -42,6 +42,10 @@ namespace Forelle.Tests.Parsing.Construction
             parser.Parse(new[] { LeftParen, Id, RightParen, Plus, Minus, Id, Times, Id }, Exp);
             parser.Parsed.ToString()
                 .ShouldEqual("Exp(BinOp(Exp((, Exp(ID), )), +, Exp(BinOp(Exp(UnOp(-, Exp(ID))), *, Exp(ID)))))");
+
+            var (parser2, errors2) = CreateParser2(rules);
+            Assert.IsEmpty(errors2);
+            Console.WriteLine(parser2.Parse(new[] { LeftParen, Id, RightParen, Plus, Minus, Id, Times, Id }, Exp));
         }
 
         /// <summary>
@@ -384,6 +388,24 @@ namespace Forelle.Tests.Parsing.Construction
 
             var (nodes, errors) = ParserGenerator.CreateParser(withStartSymbols, ambiguityResolutions);
             return (parser: nodes != null ? new TestingParser(nodes) : null, multipleNullDerivationErrors.Concat(errors).ToList());
+        }
+
+        internal static (ParserInterpeter parser, List<string> errors) CreateParser2(
+            IReadOnlyList<Rule> rules,
+            params AmbiguityResolution[] ambiguityResolutions)
+        {
+            if (!GrammarValidator.Validate(rules, out var validationErrors))
+            {
+                throw new ArgumentException("Invalid grammar: " + string.Join(Environment.NewLine, validationErrors));
+            }
+
+            var (withoutMultipleNullDerivations, multipleNullDerivationErrors) = MultipleNullDerivationRewriter.Rewrite(rules, ambiguityResolutions);
+            var withoutAliases = AliasHelper.InlineAliases(withoutMultipleNullDerivations, AliasHelper.FindAliases(withoutMultipleNullDerivations));
+            var withoutLeftRecursion = LeftRecursionRewriter.Rewrite(withoutAliases);
+            var withStartSymbols = StartSymbolAdder.AddStartSymbols(withoutLeftRecursion);
+
+            var (startContexts, contextActions) = Forelle.Parsing.Construction.New2.ParserGenerator.Generate(withStartSymbols);
+            return (new ParserInterpeter(contextActions, startContexts), new List<string>());
         }
 
         internal static string ToGroupedTokenString(SyntaxNode node)

@@ -17,7 +17,9 @@ namespace Forelle.Parsing.Construction.New2
 
         public ImmutableDictionary<ParsingContext, ParsingAction> SolvedContexts { get; }
         private ImmutableHashSet<ParsingContext> SolvingContexts { get; }
-        
+
+        public bool HasPendingContexts => !this.SolvingContexts.IsEmpty;
+
         public ParserGeneratorState AddSolution(ParsingContext context, ParsingAction action)
         {
             var newSolvingContexts = this.SolvingContexts.Remove(context);
