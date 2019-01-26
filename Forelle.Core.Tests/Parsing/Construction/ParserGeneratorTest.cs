@@ -45,7 +45,9 @@ namespace Forelle.Tests.Parsing.Construction
 
             var (parser2, errors2) = CreateParser2(rules);
             Assert.IsEmpty(errors2);
-            Console.WriteLine(parser2.Parse(new[] { LeftParen, Id, RightParen, Plus, Minus, Id, Times, Id }, Exp));
+            parser2.Parse(new[] { LeftParen, Id, RightParen, Plus, Minus, Id, Times, Id }, Exp)
+                .ToString()
+                .ShouldEqual("Exp(BinOp(Exp('(' Exp(ID) ')') + Exp(BinOp(Exp(UnOp(- Exp(ID))) * Exp(ID)))))");
         }
 
         /// <summary>
@@ -405,6 +407,7 @@ namespace Forelle.Tests.Parsing.Construction
             var withStartSymbols = StartSymbolAdder.AddStartSymbols(withoutLeftRecursion);
 
             var (startContexts, contextActions) = Forelle.Parsing.Construction.New2.ParserGenerator.Generate(withStartSymbols);
+            //Console.WriteLine(ParserPrinter.ToString(startContexts, contextActions));
             return (new ParserInterpeter(contextActions, startContexts), new List<string>());
         }
 

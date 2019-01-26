@@ -228,13 +228,7 @@ namespace Forelle.Parsing.Construction.New2
         {
             return new PotentialParseParentNode(rule, rule.Symbols.Select(s => new PotentialParseLeafNode(s)));
         }
-
-        private static IEnumerable<PotentialParseNode> GetLeavesAndNulls(PotentialParseNode node)
-        {
-            return Traverse.DepthFirst(node, n => n is PotentialParseParentNode parent ? parent.Children : Enumerable.Empty<PotentialParseNode>())
-                .Where(n => n is PotentialParseLeafNode || n.LeafCount == 0);
-        }
-
+        
         private static PotentialParseParentNode AdvanceCursor(PotentialParseParentNode node, int leafCount)
         {
             Invariant.Require(leafCount > 0);
