@@ -94,15 +94,19 @@ namespace Forelle.Parsing.Construction.New2
                 var nodesToNextSets = nodes.ToDictionary(n => n, n => this.GetNextSetFromCursor(n).Intersect(context.LookaheadTokens));
                 if (nodesToNextSets.Values.Distinct(ImmutableHashSetComparer<Token>.Instance).Count() > 1)
                 {
-                    var subContextsToNextTokens = nodesToNextSets.Values.Aggregate((s1, s2) => s1.Union(s2))
-                        .ToLookup(t => this.CreateContext(nodesToNextSets.Where(kvp => kvp.Value.Contains(t)).Select(kvp => kvp.Key)));
-                    foreach (var subContext in subContextsToNextTokens.Keys())
+                    var subContexts = nodesToNextSets.Values.Aggregate((s1, s2) => s1.Union(s2))
+                        .GroupBy(
+                            t => nodesToNextSets.Where(kvp => kvp.Value.Contains(t)).Select(kvp => kvp.Key).ToArray(), 
+                            EqualityComparers.GetSequenceComparer<PotentialParseParentNode>()
+                        )
+                        .Select(g => new ParsingContext(g.Key, lookaheadTokens: g));
+                    foreach (var subContext in subContexts)
                     {
                         var subResult = this.TrySolve(subContext);
                         if (!subResult.IsSuccessful) { return subResult.ErrorContext; }
                     }
 
-                    return new TokenSwitchAction(subContextsToNextTokens.SelectMany(g => g, (g, t) => (context: g.Key, token: t)).ToDictionary(t => t.token, t => t.context));
+                    return new TokenSwitchAction(subContexts.SelectMany(c => c.LookaheadTokens, (c, t) => (context: c, token: t)).ToDictionary(t => t.token, t => t.context));
                 }
             }
 
@@ -142,9 +146,23 @@ namespace Forelle.Parsing.Construction.New2
                         return new ParseContextAction(nonTerminalContext, next: nextContext);
                     }
 
-                    // try lifting 
-                    // need to figure out how to avoid lifting the same rule again when we've already tried that...
-                    throw new NotImplementedException();
+                    // try lifting
+                    var liftedNodes = new List<PotentialParseParentNode>();
+                    foreach (var node in nodes)
+                    {
+                        if (this.TryLiftSymbolAtCursor(node, out var lifted))
+                        {
+                            liftedNodes.AddRange(lifted);
+                        }
+                        else
+                        {
+                            return context;
+                        }
+                    }
+                    var liftedContext = new ParsingContext(liftedNodes, context.LookaheadTokens);
+                    var liftedContextResult = this.TrySolve(liftedContext);
+                    if (!liftedContextResult.IsSuccessful) { return liftedContextResult.ErrorContext; }
+                    return new DelegateToContextAction(liftedContext);
                 }
             }
 
@@ -169,28 +187,31 @@ namespace Forelle.Parsing.Construction.New2
             }
 
             var result = ImmutableHashSet.CreateBuilder<Token>();
-            GatherNextSetFromCursor(node);
-            if (result.Contains(null))
+            if (GatherNextSetFromCursor(node))
             {
-                result.Remove(null);
                 result.UnionWith(this._firstFollow.FollowOf(node.Rule));
             }
+            result.Remove(null);
             return result.ToImmutable();
 
-            void GatherNextSetFromCursor(PotentialParseNode current)
+            bool GatherNextSetFromCursor(PotentialParseNode current)
             {
                 if (current is PotentialParseParentNode parent)
                 {
                     for (var i = parent.CursorPosition ?? 0; i < parent.Children.Count; ++i)
                     {
-                        GatherNextSetFromCursor(parent.Children[i]);
-                        if (!result.Contains(null)) { break; }
+                        if (!GatherNextSetFromCursor(parent.Children[i]))
+                        {
+                            return false; // found non-nullable symbol; stop
+                        }
                     }
+
+                    return true; // all children were nullable; continue to the next sibling of parent
                 }
-                else
-                {
-                    result.UnionWith(this._firstFollow.FirstOf(current.Symbol));
-                }
+
+                var firstSet = this._firstFollow.FirstOf(current.Symbol);
+                result.UnionWith(firstSet);
+                return firstSet.Contains(null); // keep going if the symbol we just examined was nullable
             }
         }
 
@@ -306,6 +327,91 @@ namespace Forelle.Parsing.Construction.New2
             }
 
             return cursorPosition == 0 ? 0 : 1;
+        }
+
+        private bool TryLiftSymbolAtCursor(PotentialParseParentNode node, out PotentialParseParentNode[] lifted)
+        {
+            var pathToCursor = GetPathToCursor(node).ToArray();
+            var cursorNode = pathToCursor[pathToCursor.Length - 1];
+            if (pathToCursor.Take(pathToCursor.Length - 1).Any(n => n.Symbol == cursorNode.Symbol))
+            {
+                lifted = null;
+                return false;
+            }
+
+            lifted = this._rulesByProduced[(NonTerminal)cursorNode.Symbol]
+                .Select(r => ReplaceLeafInNode(node, GetCursorLeafIndex(node), this._defaultParses[r]))
+                .ToArray();
+            return true;
+        }
+
+        private static IEnumerable<PotentialParseNode> GetPathToCursor(PotentialParseNode node)
+        {
+            var current = node;
+            while (true)
+            {
+                yield return current;
+
+                if (current is PotentialParseParentNode parent)
+                {
+                    current = parent.Children[current.CursorPosition.Value];
+                }
+                else
+                {
+                    break;
+                }
+            }
+        }
+
+        // todo ADAPTED method from unifier
+        private static PotentialParseParentNode ReplaceLeafInNode(PotentialParseNode node, int leafIndexInNode, PotentialParseParentNode replacement)
+        {
+            if (node is PotentialParseParentNode parent)
+            {
+                var adjustedLeafIndex = leafIndexInNode;
+                for (var i = 0; i < parent.Children.Count; ++i)
+                {
+                    var child = parent.Children[i];
+                    if (child.LeafCount > adjustedLeafIndex)
+                    {
+                        // rebuild child
+                        var childWithLeafReplaced = ReplaceLeafInNode(child, adjustedLeafIndex, replacement);
+
+                        // we need to handle the edge case when the original child had a non-trailing cursor and
+                        // the new child has a trailing cursor, which happens when replacing a cursor node with
+                        // a null production
+                        if (!child.HasTrailingCursor() && childWithLeafReplaced.HasTrailingCursor())
+                        {
+                            // if we have any following children, tack the cursor on to the first one with leaves
+                            // or as trailing to the final one. If we have NO following children, the cursor gets re-added
+                            // as trailing to the replaced child
+                            if (i < parent.Children.Count - 1)
+                            {
+                                var indexToAddCursor = i + 1;
+                                do
+                                {
+                                    if (parent.Children[indexToAddCursor].LeafCount > 0) { break; }
+                                    ++indexToAddCursor;
+                                }
+                                while (indexToAddCursor < parent.Children.Count);
+
+                                return new PotentialParseParentNode(
+                                    parent.Rule,
+                                    parent.Children.Select((ch, index) => index == i ? childWithLeafReplaced.WithoutCursor() : index == indexToAddCursor ? parent.Children[index].WithCursor(0) : parent.Children[index])
+                                );
+                            }
+                        }
+                        return new PotentialParseParentNode(parent.Rule, parent.Children.Select((ch, index) => index == i ? childWithLeafReplaced : parent.Children[index]));
+                    }
+
+                    adjustedLeafIndex -= child.LeafCount;
+                }
+            }
+
+            Invariant.Require(leafIndexInNode == 0 && node.Symbol == replacement.Symbol);
+            Invariant.Require(node.CursorPosition.HasValue == replacement.CursorPosition.HasValue);
+            Invariant.Require(!node.HasTrailingCursor() || replacement.HasTrailingCursor());
+            return replacement;
         }
     }
 }

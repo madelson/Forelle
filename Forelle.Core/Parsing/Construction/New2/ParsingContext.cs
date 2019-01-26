@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Linq;
 using System.Text;
 
 namespace Forelle.Parsing.Construction.New2
@@ -22,6 +23,8 @@ namespace Forelle.Parsing.Construction.New2
         public ImmutableHashSet<PotentialParseParentNode> Nodes { get; }
         public ImmutableHashSet<Token> LookaheadTokens { get; }
 
+        private string DebugView => this.ToString();
+
         public override bool Equals(object obj) => obj is ParsingContext that
             && (this._cachedHashCode == default || that._cachedHashCode == default || this._cachedHashCode == that._cachedHashCode)
             && ImmutableHashSetComparer<PotentialParseParentNode>.Instance.Equals(this.Nodes, that.Nodes)
@@ -40,5 +43,14 @@ namespace Forelle.Parsing.Construction.New2
 
             return this._cachedHashCode;
         }
+
+        public override string ToString() =>
+            string.Join(
+                Environment.NewLine,
+                this.Nodes.Select(n => n.ToMarkedString())
+                    .OrderBy(s => s, StringComparer.Ordinal)
+            )
+            + Environment.NewLine
+            + $"LOOKAHEAD [{string.Join(", ", this.LookaheadTokens.OrderBy(s => s.Name, StringComparer.Ordinal))}]";
     }
 }

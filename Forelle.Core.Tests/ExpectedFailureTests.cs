@@ -172,34 +172,6 @@ namespace Forelle.Tests
         }
 
         [Test]
-        public void ExpectFailure_TestHigherLevelLookaheadRequired()
-        {
-            // This test is interesting because it is a very simple non-ambiguous grammar
-            // where we get stuck trying to generate a parser node for symbol B, which we
-            // cannot do because we don't know what to do when trying to parse B and seeing
-            // semicolon in the lookahead. Interestingly, if we backed up to the rule A -> B ;
-            // and inlined B to get A -> ; ; | A -> ;, we can definitely parse this!
-
-            // Note that this grammar isn't LR(1) either, as seen by using the grammar:
-            // S' -> A
-            // A -> B x
-            // B -> x
-            // B -> ''
-            // on http://jsmachines.sourceforge.net/machines/lr1.html
-            // Similarly, the simplified grammar A -> x x | x is LR(1)
-
-            var rules = new Rules
-            {
-                { A, B, SemiColon },
-                { B },
-                { B, SemiColon },
-            };
-
-            var (parser, errors) = ParserGeneratorTest.CreateParser(rules);
-            Assert.IsEmpty(errors);
-        }
-
-        [Test]
         public void ExpectFailure_LongerLookaheadRequired()
         {
             // this is an interesting case where an LR(2) parser would be fine but we currently fail.
@@ -219,6 +191,27 @@ namespace Forelle.Tests
             };
 
             var (parser, errors) = ParserGeneratorTest.CreateParser(rules);
+            Assert.IsEmpty(errors);
+        }
+
+        [Test]
+        public void ExpectFailure_RecursiveLiftingCase()
+        {
+            // this grammar is interesting because in the abstract we cannot parse B -> B() | B(( B ))
+            // because ( is in the follow of B. Lifting here doesn't fully solve the problem because
+            // we then find ourselves considering A -> ( .B ) ( B ) | A -> B() ( .B ) and once again
+            // we find ourselves wanting to parse a B. HOWEVER, if we tried parsing B in the specific lookahead
+            // context of this parsing context, we'd find that "(" is no longer in the next set for B -> B() which
+            // now makes this parseable
+
+            var rules = new Rules
+            {
+                { A, B, LeftParen, B, RightParen },
+                { B },
+                { B, LeftParen, B, RightParen }
+            };
+
+            var (parser, errors) = ParserGeneratorTest.CreateParser2(rules);
             Assert.IsEmpty(errors);
         }
     }

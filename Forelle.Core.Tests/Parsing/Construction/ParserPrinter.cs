@@ -52,6 +52,9 @@ namespace Forelle.Tests.Parsing.Construction
                             builder.AppendLine($"ON {TokensToString(tokenSet.ToArray())}, GOTO {IdOf(tokenSet.Key)}");
                         }
                         break;
+                    case DelegateToContextAction delegateTo:
+                        builder.AppendLine($"GOTO {IdOf(delegateTo.Next)}");
+                        break;
                     default:
                         throw new NotImplementedException();
                 }

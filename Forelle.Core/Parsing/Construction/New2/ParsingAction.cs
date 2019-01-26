@@ -75,4 +75,16 @@ namespace Forelle.Parsing.Construction.New2
 
         protected override IEnumerable<ParsingContext> GetResultDelegatedToContexts() => new[] { this.Next };
     }
+
+    internal sealed class DelegateToContextAction : ParsingAction
+    {
+        public DelegateToContextAction(ParsingContext next)
+        {
+            this.Next = next ?? throw new ArgumentNullException(nameof(next));
+        }
+
+        public ParsingContext Next { get; }
+
+        protected override IEnumerable<ParsingContext> GetResultDelegatedToContexts() => new[] { this.Next };
+    }
 }

@@ -68,6 +68,7 @@
     <Compile Include="Parsing\Construction\DiscriminatorHelperTest.cs" />
     <Compile Include="Parsing\Construction\ImmutableTrieTest.cs" />
     <Compile Include="Parsing\Construction\LargeGrammarTest.cs" />
+    <Compile Include="Parsing\Construction\LiftingTest.cs" />
     <Compile Include="Parsing\Construction\ParserInterpeter.cs" />
     <Compile Include="Parsing\Construction\ParserPrinter.cs" />
     <Compile Include="Parsing\PotentialParseNodeParser.cs" />
