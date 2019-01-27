@@ -45,6 +45,7 @@ namespace Forelle.Tests.Parsing.Construction
 
             var (parser2, errors2) = CreateParser2(rules);
             Assert.IsEmpty(errors2);
+
             parser2.Parse(new[] { LeftParen, Id, RightParen, Plus, Minus, Id, Times, Id }, Exp)
                 .ToString()
                 .ShouldEqual("Exp(BinOp(Exp('(' Exp(ID) ')') + Exp(BinOp(Exp(UnOp(- Exp(ID))) * Exp(ID)))))");
@@ -71,6 +72,13 @@ namespace Forelle.Tests.Parsing.Construction
             parser.Parse(new[] { Id, Id, Times, SemiColon, Plus, SemiColon, Minus }, A);
             parser.Parsed.ToString()
                 .ShouldEqual("A(ID, A(ID, A(*), B(;), +), B(;), -)");
+
+            var (parser2, errors2) = CreateParser2(rules);
+            Assert.IsEmpty(errors2);
+
+            parser2.Parse(new[] { Id, Id, Times, SemiColon, Plus, SemiColon, Minus }, A)
+                .ToString()
+                .ShouldEqual("A(ID A(ID A(*) B(;) +) B(;) -)");
         }
 
         [Test]
@@ -127,9 +135,16 @@ namespace Forelle.Tests.Parsing.Construction
             Assert.IsEmpty(errors);
             
             parser.Parse(new[] { a, e, a }, s);
-            
             parser.Parsed.ToString()
                 .ShouldEqual("S(a, E(e), a)");
+
+            var (parser2, errors2) = CreateParser2(rules);
+            Assert.IsEmpty(errors2);
+
+            parser2.Parse(new[] { a, e, a }, s)
+                .ToString()
+                .ShouldEqual("S(a E(e) a)");
+
         }
 
         // tests parsing a non-ambiguous grammar with both generics and comparison
@@ -230,6 +245,13 @@ namespace Forelle.Tests.Parsing.Construction
             parser.Parsed.Flatten(nameList)
                 .ToString()
                 .ShouldEqual("def(param_spec(name_list(name(ID), ,, name(ID)), :, type(ID)), return_spec(name(ID), :, type(ID)), ,)");
+
+            var (parser2, errors2) = CreateParser2(rules);
+            Assert.IsEmpty(errors2);
+
+            parser2.Parse(new[] { Id, Comma, Id, Colon, Id, Id, Colon, Id, Comma }, def)
+                .ToString()
+                .ShouldEqual("def(param_spec(name_list(name(ID) , name_list(name(ID))) : type(ID)) return_spec(name(ID) : type(ID)) ,)");
         }
 
         [Test]
@@ -248,6 +270,13 @@ namespace Forelle.Tests.Parsing.Construction
             parser.Parse(new[] { Id, Times, Id, Times, Id, Plus, Id, Plus, Id, Times, Id }, Exp);
             ToGroupedTokenString(parser.Parsed)
                 .ShouldEqual("((((ID * ID) * ID) + ID) + (ID * ID))");
+
+            var (parser2, errors2) = CreateParser2(rules);
+            Assert.IsEmpty(errors2);
+
+            parser2.Parse(new[] { Id, Times, Id, Times, Id, Plus, Id, Plus, Id, Times, Id }, Exp)
+                .ToString()
+                .ShouldEqual("Exp(Exp(Exp(Exp(Exp(ID) * Exp(ID)) * Exp(ID)) + Exp(ID)) + Exp(Exp(ID) * Exp(ID)))");
         }
 
         [Test]
@@ -265,6 +294,13 @@ namespace Forelle.Tests.Parsing.Construction
             parser.Parse(new[] { Id, QuestionMark, Id, QuestionMark, Id, Colon, Id, Colon, Id, QuestionMark, Id, Colon, Id }, Exp);
             ToGroupedTokenString(parser.Parsed)
                 .ShouldEqual("(ID ? (ID ? ID : ID) : (ID ? ID : ID))");
+
+            var (parser2, errors2) = CreateParser2(rules);
+            Assert.IsEmpty(errors2);
+
+            parser2.Parse(new[] { Id, QuestionMark, Id, QuestionMark, Id, Colon, Id, Colon, Id, QuestionMark, Id, Colon, Id }, Exp)
+                .ToString()
+                .ShouldEqual("Exp(Exp(ID) ? Exp(Exp(ID) ? Exp(ID) : Exp(ID)) : Exp(Exp(ID) ? Exp(ID) : Exp(ID)))");
         }
 
         [Test]
@@ -284,6 +320,13 @@ namespace Forelle.Tests.Parsing.Construction
             parser.Parse(new[] { Await, Id, Minus, Minus, Id }, Exp);
             ToGroupedTokenString(parser.Parsed)
                 .ShouldEqual("(await (ID - (- ID)))");
+
+            var (parser2, errors2) = CreateParser2(rules);
+            Assert.IsEmpty(errors2);
+
+            parser2.Parse(new[] { Await, Id, Minus, Minus, Id }, Exp)
+                .ToString()
+                .ShouldEqual("Exp(await Exp(Exp(ID) - Exp(- Exp(ID))))");
         }
 
         [Test]
@@ -305,6 +348,13 @@ namespace Forelle.Tests.Parsing.Construction
             parser.Parse(new[] { Id, Times, Minus, Id, Minus, Id }, Exp);
             ToGroupedTokenString(parser.Parsed)
                 .ShouldEqual("((ID * (- ID)) - ID)");
+
+            var (parser2, errors2) = CreateParser2(rules);
+            Assert.IsEmpty(errors2);
+
+            parser2.Parse(new[] { Id, Times, Minus, Id, Minus, Id }, Exp)
+                .ToString()
+                .ShouldEqual("Exp(BinOp(Exp(BinOp(Exp(ID) * Exp(- Exp(ID)))) - Exp(ID)))");
         }
 
         /// <summary>
@@ -335,6 +385,17 @@ namespace Forelle.Tests.Parsing.Construction
             parser.Parse(new[] { Id, SemiColon, Minus }, Stmt);
             parser.Parsed.ToString()
                 .ShouldEqual("Stmt(Exp(B(ID), ;, -))");
+
+            var (parser2, errors2) = CreateParser2(rules);
+            Assert.IsEmpty(errors2);
+
+            parser2.Parse(new[] { Id, SemiColon, Plus }, Stmt)
+                .ToString()
+                .ShouldEqual("Stmt(Exp(A(ID) ; +))");
+
+            parser2.Parse(new[] { Id, SemiColon, Minus }, Stmt)
+                .ToString()
+                .ShouldEqual("Stmt(Exp(B(ID) ; -))");
         }
 
         /// <summary>
@@ -372,6 +433,17 @@ namespace Forelle.Tests.Parsing.Construction
             parser.Parse(new[] { Id, Id, Id, LeftParen, LeftParen, RightParen, RightParen, Minus }, Stmt);
             parser.Parsed.ToString()
                 .ShouldEqual("Stmt(Exp(B(ID, P(ID, ID)), C((, C((, C, )), )), -))");
+
+            var (parser2, errors2) = CreateParser2(rules);
+            Assert.IsEmpty(errors2);
+
+            parser2.Parse(new[] { Id, Id, Id, LeftParen, LeftParen, RightParen, RightParen, Plus }, Stmt)
+                .ToString()
+                .ShouldEqual("Stmt(Exp(A(P(ID ID) ID) C('(' C('(' C() ')') ')') +))");
+
+            parser2.Parse(new[] { Id, Id, Id, LeftParen, LeftParen, RightParen, RightParen, Minus }, Stmt)
+                .ToString()
+                .ShouldEqual("Stmt(Exp(B(ID P(ID ID)) C('(' C('(' C() ')') ')') -))");
         }
 
         internal static (TestingParser parser, List<string> errors) CreateParser(

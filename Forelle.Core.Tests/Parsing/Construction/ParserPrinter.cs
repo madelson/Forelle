@@ -52,8 +52,8 @@ namespace Forelle.Tests.Parsing.Construction
                             builder.AppendLine($"ON {TokensToString(tokenSet.ToArray())}, GOTO {IdOf(tokenSet.Key)}");
                         }
                         break;
-                    case DelegateToContextAction delegateTo:
-                        builder.AppendLine($"GOTO {IdOf(delegateTo.Next)}");
+                    case DelegateToSpecializedContextAction specialize:
+                        builder.AppendLine($"GOTO {IdOf(specialize.Next)}");
                         break;
                     default:
                         throw new NotImplementedException();

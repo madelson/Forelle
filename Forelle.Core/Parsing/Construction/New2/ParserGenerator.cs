@@ -145,29 +145,38 @@ namespace Forelle.Parsing.Construction.New2
                         if (!nextContextResult.IsSuccessful) { return nextContextResult.ErrorContext; }
                         return new ParseContextAction(nonTerminalContext, next: nextContext);
                     }
-
-                    // try lifting
-                    var liftedNodes = new List<PotentialParseParentNode>();
-                    foreach (var node in nodes)
-                    {
-                        if (this.TryLiftSymbolAtCursor(node, out var lifted))
-                        {
-                            liftedNodes.AddRange(lifted);
-                        }
-                        else
-                        {
-                            return context;
-                        }
-                    }
-                    var liftedContext = new ParsingContext(liftedNodes, context.LookaheadTokens);
-                    var liftedContextResult = this.TrySolve(liftedContext);
-                    if (!liftedContextResult.IsSuccessful) { return liftedContextResult.ErrorContext; }
-                    return new DelegateToContextAction(liftedContext);
                 }
             }
 
-            // todo discriminator
-            throw new NotImplementedException();
+            // try specializing
+
+            // in order to specialize, we need a single lookahead token. If we have 
+            // more than  one, branch on token
+            if (context.LookaheadTokens.Count > 1)
+            {
+                var lookaheadTokensToSubContexts = context.LookaheadTokens.ToDictionary(t => t, t => new ParsingContext(nodes, ImmutableHashSet.Create(t)));
+                foreach (var subContext in lookaheadTokensToSubContexts.Values)
+                {
+                    var subResult = this.TrySolve(subContext);
+                    if (!subResult.IsSuccessful) { return subResult.ErrorContext; }
+                }
+
+                return new TokenSwitchAction(lookaheadTokensToSubContexts);
+            }
+
+            // see if we can specialize
+            var specialized = new List<PotentialParseParentNode>();
+            foreach (var node in nodes)
+            {
+                var nodeSpecialized = this.TrySpecialize(node, context.LookaheadTokens.Single());
+                if (nodeSpecialized == null) { return context; }
+                specialized.AddRange(nodeSpecialized);
+            }
+            if (specialized.Any(n => n.LeafCount > 50)) { throw new NotImplementedException("todo recursion will remove the need for this check"); }
+            var specializedContext = new ParsingContext(specialized, context.LookaheadTokens);
+            var specializedContextResult = this.TrySolve(specializedContext);
+            if (!specializedContextResult.IsSuccessful) { return context; }
+            return new DelegateToSpecializedContextAction(specializedContext);
         }
 
         private ParsingContext CreateContext(IEnumerable<PotentialParseParentNode> nodes)
@@ -329,22 +338,34 @@ namespace Forelle.Parsing.Construction.New2
             return cursorPosition == 0 ? 0 : 1;
         }
 
-        private bool TryLiftSymbolAtCursor(PotentialParseParentNode node, out PotentialParseParentNode[] lifted)
+        private IReadOnlyCollection<PotentialParseParentNode> TrySpecialize(
+            PotentialParseParentNode node, 
+            Token lookahead)
         {
-            var pathToCursor = GetPathToCursor(node).ToArray();
-            var cursorNode = pathToCursor[pathToCursor.Length - 1];
-            if (pathToCursor.Take(pathToCursor.Length - 1).Any(n => n.Symbol == cursorNode.Symbol))
+            if (node.HasTrailingCursor()) { return null; }
+
+            var cursorSymbol = node.GetLeafAtCursorPosition().Symbol;
+
+            if (cursorSymbol == lookahead) { return new[] { node }; }
+            
+            var cursorLeafIndex = GetCursorLeafIndex(node);
+            var result = new List<PotentialParseParentNode>();
+            foreach (var expansionRule in this._rulesByProduced[(NonTerminal)cursorSymbol])
             {
-                lifted = null;
-                return false;
+                var expansion = this._defaultParses[expansionRule];
+                var expanded = ReplaceLeafInNode(node, cursorLeafIndex, replacement: expansion);
+                if (this.GetNextSetFromCursor(expanded).Contains(lookahead))
+                {
+                    var specialized = this.TrySpecialize(expanded, lookahead);
+                    if (specialized == null) { return null; }
+                    result.AddRange(specialized);
+                }
             }
-
-            lifted = this._rulesByProduced[(NonTerminal)cursorNode.Symbol]
-                .Select(r => ReplaceLeafInNode(node, GetCursorLeafIndex(node), this._defaultParses[r]))
-                .ToArray();
-            return true;
+            Invariant.Require(result.Count > 0);
+            return result;
         }
-
+        
+        // todo unused for the moment
         private static IEnumerable<PotentialParseNode> GetPathToCursor(PotentialParseNode node)
         {
             var current = node;

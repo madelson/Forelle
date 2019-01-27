@@ -86,15 +86,15 @@ namespace Forelle.Tests.Parsing.Construction
                         this.Parse(parseContext.Context);
                         return this.Parse(parseContext.Next);
                     }
-                case DelegateToContextAction delegateToContext:
+                case DelegateToSpecializedContextAction specializeContext:
                     {
                         if (this._scanAheadMode)
                         {
-                            return this.Parse(delegateToContext.Next);
+                            return this.Parse(specializeContext.Next);
                         }
 
                         this._scanAheadMode = true;
-                        var result = this.Parse(delegateToContext.Next);
+                        var result = this.Parse(specializeContext.Next);
                         this.ClearScanAhead();
                         this._scanAheadMode = false;
                         return result;
