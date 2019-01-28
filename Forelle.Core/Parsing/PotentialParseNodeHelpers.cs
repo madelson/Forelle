@@ -17,11 +17,13 @@ namespace Forelle.Parsing
                 : node.CursorPosition == 1;
         }
 
-        public static PotentialParseNode WithoutCursor(this PotentialParseNode node)
+        public static TNode WithoutCursor<TNode>(this TNode node)
+            where TNode : PotentialParseNode
         {
-            return !node.CursorPosition.HasValue ? node
+            var result = !node.CursorPosition.HasValue ? node
                 : node is PotentialParseParentNode parent ? new PotentialParseParentNode(parent.Rule, parent.Children.Select(WithoutCursor))
                 : new PotentialParseLeafNode(node.Symbol).As<PotentialParseNode>();
+            return (TNode)result;
         }
 
         public static TNode WithCursor<TNode>(this TNode node, int cursorPosition)
@@ -56,21 +58,27 @@ namespace Forelle.Parsing
             return (TNode)new PotentialParseLeafNode(node.Symbol, cursorPosition).As<PotentialParseNode>();
         }
 
-        public static PotentialParseNode WithTrailingCursor(this PotentialParseNode node)
+        public static TNode WithTrailingCursor<TNode>(this TNode node)
+            where TNode : PotentialParseNode
         {
             if (node.HasTrailingCursor()) { return node; }
 
+            PotentialParseNode result;
             if (node is PotentialParseParentNode parent)
             {
-                if (parent.Children.Count == 0) { return new PotentialParseParentNode(parent.Rule, hasTrailingCursor: true); }
-
-                return new PotentialParseParentNode(
-                    parent.Rule,
-                    parent.Children.Select((ch, i) => i == parent.Children.Count - 1 ? ch.WithTrailingCursor() : ch)
-                );
+                result = parent.Children.Count == 0
+                    ? new PotentialParseParentNode(parent.Rule, hasTrailingCursor: true)
+                    : new PotentialParseParentNode(
+                        parent.Rule,
+                        parent.Children.Select((ch, i) => i == parent.Children.Count - 1 ? ch.WithTrailingCursor() : ch)
+                    );
+            }
+            else
+            {
+                result = new PotentialParseLeafNode(node.Symbol, cursorPosition: 1);
             }
 
-            return new PotentialParseLeafNode(node.Symbol, cursorPosition: 1);
+            return (TNode)result;
         }
 
         public static PotentialParseLeafNode GetLeafAtCursorPosition(this PotentialParseNode node)

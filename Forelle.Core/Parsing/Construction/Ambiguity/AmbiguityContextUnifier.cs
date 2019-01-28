@@ -632,7 +632,7 @@ namespace Forelle.Parsing.Construction.Ambiguity
                                 {
                                     return new PotentialParseLeafNode(s, cursorPosition: 0);
                                 }
-                                return new PotentialParseLeafNode(s);
+                                return new PotentialParseLeafNode(s).As<PotentialParseNode>();
                             }
                         )
                     ),

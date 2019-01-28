@@ -71,6 +71,7 @@
     <Compile Include="Parsing\Construction\LiftingTest.cs" />
     <Compile Include="Parsing\Construction\ParserInterpeter.cs" />
     <Compile Include="Parsing\Construction\ParserPrinter.cs" />
+    <Compile Include="Parsing\Construction\RecursiveSpecializationTest.cs" />
     <Compile Include="Parsing\PotentialParseNodeParser.cs" />
     <Compile Include="Parsing\Preprocessing\AliasHelperTest.cs" />
     <Compile Include="Parsing\FirstFollowCalculatorTest.cs" />

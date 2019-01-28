@@ -150,6 +150,22 @@ namespace Forelle.Parsing.Construction.New2
 
             // try specializing
 
+            // first, see if we've specialized to the point where all nodes in the context are exhibiting recursion. In this case,
+            // further specialization will just get us back to this state, so instead we attempt to parse the recursive part of
+            // the context and then move on from that to the remainder of the current context
+            var recursiveSpecializations = nodes.ToDictionary(n => n, SpecializationRecursionHelper.GetRecursiveSubtreeOrDefault);
+            if (!recursiveSpecializations.ContainsValue(null))
+            {
+                var recursiveContext = new ParsingContext(recursiveSpecializations.Values, context.LookaheadTokens);
+                if (recursiveContext.Nodes.Count > 1) { throw new NotImplementedException("todo discriminator"); }
+                var recursiveResult = this.TrySolve(recursiveContext);
+                if (!recursiveResult.IsSuccessful) { return recursiveResult.ErrorContext; }
+                var nextContext = this.CreateContext(recursiveSpecializations.Select(kvp => SpecializationRecursionHelper.AdvanceCursorPastSubtree(kvp.Key, kvp.Value)));
+                var nextResult = this.TrySolve(nextContext);
+                if (!nextResult.IsSuccessful) { return nextResult.ErrorContext; }
+                return new ParseContextAction(recursiveContext, nextContext);
+            }
+
             // in order to specialize, we need a single lookahead token. If we have 
             // more than  one, branch on token
             if (context.LookaheadTokens.Count > 1)
@@ -172,10 +188,10 @@ namespace Forelle.Parsing.Construction.New2
                 if (nodeSpecialized == null) { return context; }
                 specialized.AddRange(nodeSpecialized);
             }
-            if (specialized.Any(n => n.LeafCount > 50)) { throw new NotImplementedException("todo recursion will remove the need for this check"); }
+            
             var specializedContext = new ParsingContext(specialized, context.LookaheadTokens);
             var specializedContextResult = this.TrySolve(specializedContext);
-            if (!specializedContextResult.IsSuccessful) { return context; }
+            if (!specializedContextResult.IsSuccessful) { return specializedContextResult.ErrorContext; }
             return new DelegateToSpecializedContextAction(specializedContext);
         }
 
@@ -364,7 +380,7 @@ namespace Forelle.Parsing.Construction.New2
             Invariant.Require(result.Count > 0);
             return result;
         }
-        
+
         // todo unused for the moment
         private static IEnumerable<PotentialParseNode> GetPathToCursor(PotentialParseNode node)
         {
