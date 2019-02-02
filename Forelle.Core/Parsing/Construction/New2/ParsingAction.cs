@@ -164,6 +164,9 @@ namespace Forelle.Parsing.Construction.New2
         {
             this.Next = next ?? throw new ArgumentNullException(nameof(next));
             this._nextToCurrentNodeMapping = nextToCurrentNodeMapping.ToArray();
+            // TODO I don't think this can ever happen, since it would require 2 different nodes to specialize to the same node. I'm not convinced
+            // that that can actually happen...
+            Invariant.Require(this._nextToCurrentNodeMapping.Select(t => t.next).Distinct(NodeComparer).Count() == this._nextToCurrentNodeMapping.Count);
         }
 
         public ParsingContext Next { get; }
