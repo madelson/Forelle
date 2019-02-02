@@ -64,3 +64,6 @@ IDEAS 1/26/2019
 IDEAS 1/27/2019
 - When specializing and detecting recursion, we don't have to immediately roll back and rerun from the first point. Instead, we can just solve the recursive case. This leaves some extra cruft in the parser, but that could be removed during the optimization phase
 - Another thing we can do during the post-generation phase is determine which contexts appear only in scan-ahead mode or never in scan-ahead mode. This may allow us to use the stack less (although it's hard when we go to clear scan-ahead if we have random things that should be on the stack held in locals). At minimum, anything that ONLY appears in scan-ahead can always go straight to using that stack
+
+IDEAS 1/28/2019
+- When parsing a lookpast, it will leave behind a reduction in the scan-ahead with multiple nodes. In cleaning the scan-ahead, we can simply fix this by picking the right rule to reduce by based on the encapsulating parse!

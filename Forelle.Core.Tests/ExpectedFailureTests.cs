@@ -42,8 +42,16 @@ namespace Forelle.Tests
                 { Exp, B },
             };
 
-            var (parser, errors) = ParserGeneratorTest.CreateParser(rules);
+            var (parser, errors) = ParserGeneratorTest.CreateParser2(rules);
             Assert.IsEmpty(errors);
+
+            parser.Parse(new[] { LeftParen, Id, RightParen }, Exp)
+                .ToString()
+                .ShouldEqual("Exp(A('(' A(ID) ')'))");
+
+            parser.Parse(new[] { LeftParen, QuestionMark, RightParen, Minus }, Stmt)
+                .ToString()
+                .ShouldEqual("Stmt(B('(' B(?) ')') -)");
 
             // when we take away these rules, we no longer generate an A | B
             // discriminator. That means that our only option is to continue
@@ -54,8 +62,18 @@ namespace Forelle.Tests
             rules.Remove(rules[Exp, A]).ShouldEqual(true);
             rules.Remove(rules[Exp, B]).ShouldEqual(true);
 
-            (parser, errors) = ParserGeneratorTest.CreateParser(rules);
+            (parser, errors) = ParserGeneratorTest.CreateParser2(rules);
             Assert.IsEmpty(errors);
+
+            parser.Parse(new[] { LeftParen, LeftParen, QuestionMark, RightParen, RightParen, Minus }, Stmt)
+                .ToString()
+                .ShouldEqual("Stmt(B('(' B('(' B(?) ')') ')') -)");
+
+            parser.Parse(new[] { LeftParen, LeftParen, LeftParen, Id, RightParen, RightParen, RightParen, Plus }, Stmt)
+                .ToString()
+                .ShouldEqual("Stmt(A('(' A('(' A('(' A(?) ')') ')') ')') +)");
+
+            Assert.Throws<InvalidOperationException>(() => parser.Parse(new[] { LeftParen, LeftParen, LeftParen, Id, RightParen, RightParen, RightParen, Minus }, Stmt));
         }
 
         /// <summary>
@@ -81,8 +99,19 @@ namespace Forelle.Tests
                 { Stmt, B, Minus },
             };
 
-            var (parser, errors) = ParserGeneratorTest.CreateParser(rules);
+            //var (parser, errors) = ParserGeneratorTest.CreateParser(rules);
+            //Assert.IsEmpty(errors);
+
+            var (parser, errors) = ParserGeneratorTest.CreateParser2(rules);
             Assert.IsEmpty(errors);
+
+            parser.Parse(new[] { LeftParen, LeftParen, Id, RightParen, RightParen, Plus }, Stmt)
+                .ToString()
+                .ShouldEqual("Stmt(A('(' A('(' A(ID) ')') ')') +)");
+
+            parser.Parse(new[] { LeftParen, Id, RightParen, Minus }, Stmt)
+                .ToString()
+                .ShouldEqual("Stmt(B('(' B(ID) ')') -)");
         }
 
         // todo try another variant where A and B are truly non-differentiable out of context (e. g. both have the same

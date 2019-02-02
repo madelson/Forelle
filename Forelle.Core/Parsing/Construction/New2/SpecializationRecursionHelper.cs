@@ -1,6 +1,7 @@
 ﻿using Medallion.Collections;
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
 
@@ -14,6 +15,8 @@ namespace Forelle.Parsing.Construction.New2
         /// </summary>
         public static PotentialParseParentNode GetRecursiveSubtreeOrDefault(PotentialParseParentNode node)
         {
+            // todo want to start recursing earlier and on a leaf node
+
             if (node.HasTrailingCursor()) { return null; }
 
             var subtreeParts = GetSubtreePartsFromRoot(node);
@@ -72,6 +75,7 @@ namespace Forelle.Parsing.Construction.New2
             return result;
         }
 
+        // todo this should probably be changed to be a comparer
         /// <summary>
         /// Provides equality based on (a) the <see cref="Rule"/> being expanded, (b)
         /// the <see cref="PotentialParseNode.CursorPosition"/>, and (c) the
@@ -154,13 +158,47 @@ namespace Forelle.Parsing.Construction.New2
 
                 int? GetNewCursorIndex()
                 {
-                    // pick the first child after cursor which has a leaf to place the cursor on, or else
-                    // the last child after cursor
-                    for (var i = cursorPosition + 1; i < current.Children.Count; ++i)
+                    // if the updated child has a trailing cursor, try to place the cursor on a later sibling
+                    if (updatedChild.HasTrailingCursor())
                     {
-                        if (i == current.Children.Count - 1 || current.Children[i].LeafCount > 0) { return i; }
+                        // pick the first child after cursor which has a leaf to place the cursor on, or else
+                        // the last child after cursor
+                        for (var i = cursorPosition + 1; i < current.Children.Count; ++i)
+                        {
+                            if (i == current.Children.Count - 1 || current.Children[i].LeafCount > 0) { return i; }
+                        }
                     }
                     return null;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Given a set of non-overlapping <paramref name="partialContexts"/>, returns all distinct 
+        /// <see cref="ParsingContext"/>s that could be created by combining them
+        /// </summary>
+        public static List<ParsingContext> GetAllCombinedContexts(IReadOnlyList<ParsingContext> partialContexts)
+        {
+            Invariant.Require(
+                partialContexts.SelectMany(c => c.Nodes).GroupBy(n => n, PotentialParseNodeWithCursorComparer.Instance).All(g => g.Count() == 1),
+                "the contexts should not overlap"
+            );
+
+            var result = new List<ParsingContext>();
+            for (var i = 0; i < partialContexts.Count; ++i)
+            {
+                GatherCombinedContexts(partialContexts[i], maxIndexUsed: i);
+            }
+            return result;
+
+            void GatherCombinedContexts(ParsingContext baseContext, int maxIndexUsed)
+            {
+                result.Add(baseContext);
+                for (var i = maxIndexUsed + 1; i < partialContexts.Count; ++i)
+                {
+                    var contextToMerge = partialContexts[i];
+                    var newContext = new ParsingContext(baseContext.Nodes.Union(contextToMerge.Nodes), baseContext.LookaheadTokens.Union(contextToMerge.LookaheadTokens));
+                    GatherCombinedContexts(newContext, i);
                 }
             }
         }

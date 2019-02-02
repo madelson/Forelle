@@ -2,6 +2,7 @@
 using Forelle.Parsing.Construction.New2;
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -52,8 +53,10 @@ namespace Forelle.Tests.Parsing.Construction
             return this._parsedStack.Last();
         }
 
-        private PotentialParseParentNode Parse(ParsingContext context)
+        private ImmutableHashSet<PotentialParseParentNode> Parse(ParsingContext context)
         {
+            var action = this._contextActions[context];
+            ImmutableHashSet<PotentialParseParentNode> nextContextResult;
             switch (this._contextActions[context])
             {
                 case EatTokenAction eatToken:
@@ -64,49 +67,62 @@ namespace Forelle.Tests.Parsing.Construction
                         if (this._scanAheadMode) { this._scanAheadStack.Push(new ScanAheadAction(tokenNode)); }
                         else { this._parsedStack.Push(tokenNode); }
                         ++this._index;
-                        return this.Parse(eatToken.Next);
+                        nextContextResult = this.Parse(eatToken.Next);
+                        break;
                     }
                 case TokenSwitchAction tokenSwitch:
                     {
                         var nextToken = this.Peek();
-                        return tokenSwitch.Switch.TryGetValue(nextToken, out var nextContext)
+                        nextContextResult = tokenSwitch.Switch.TryGetValue(nextToken, out var nextContext)
                             ? this.Parse(nextContext)
                             : throw new InvalidOperationException($"Expected one of [{string.Join(", ", tokenSwitch.Switch.Keys)}] at index {this._index}. Found {nextToken}");
+                        break;
                     }
                 case ReduceAction reduce:
                     {
-                        var parse = reduce.Parses.Count == 1
-                            ? reduce.Parses.Single()
-                            : throw new InvalidOperationException($"Multiple reductions found for context {context}");
-                        this.ReduceBy(parse);
-                        return parse;
+                        this.ReduceBy(reduce.Parses);
+                        return reduce.Parses;
                     }
-                case ParseContextAction parseContext:
+                case ParseSubContextAction parseSubContext:
                     {
-                        this.Parse(parseContext.Context);
-                        return this.Parse(parseContext.Next);
+                        this.Parse(parseSubContext.SubContext);
+                        nextContextResult = this.Parse(parseSubContext.Next);
+                        break;
                     }
                 case DelegateToSpecializedContextAction specializeContext:
                     {
                         if (this._scanAheadMode)
                         {
-                            return this.Parse(specializeContext.Next);
+                            nextContextResult = this.Parse(specializeContext.Next);
                         }
-
-                        this._scanAheadMode = true;
-                        var result = this.Parse(specializeContext.Next);
-                        this.ClearScanAhead();
-                        this._scanAheadMode = false;
-                        return result;
+                        else
+                        {
+                            this._scanAheadMode = true;
+                            nextContextResult = this.Parse(specializeContext.Next);
+                            this.ClearScanAhead();
+                            this._scanAheadMode = false;
+                        }
+                        break;
+                    }
+                case SubContextSwitchAction subContextSwitch:
+                    {
+                        var subContextResult = this.Parse(subContextSwitch.SubContext);
+                        nextContextResult = this.Parse(subContextResult.Select(n => subContextSwitch.Switch[n]).Only(c => c));
+                        break;
                     }
                 default:
                     throw new InvalidOperationException("Unrecognized action!");
             }
+
+            // note: we could be smarter about only doing this when we know the result
+            // might role up to a sub context switch
+            return nextContextResult.Select(n => action.NextToCurrentNodeMapping[n])
+                .Aggregate((s1, s2) => s1.Union(s2));
         }
 
         private Token Peek() => this._index == this._tokens.Count ? this._endToken : this._tokens[this._index];
 
-        private void ReduceBy(PotentialParseParentNode parse)
+        private void ReduceBy(ImmutableHashSet<PotentialParseParentNode> parse)
         {
             if (this._scanAheadMode)
             {
@@ -115,16 +131,18 @@ namespace Forelle.Tests.Parsing.Construction
                 return;
             }
 
-            Invariant.Require(!parse.Children.Any(ch => ch is PotentialParseParentNode));
+            Invariant.Require(parse.Count == 1, "Multiple reductions found!");
+            var singleParse = parse.Single();
+            Invariant.Require(!singleParse.Children.Any(ch => ch is PotentialParseParentNode));
 
-            this.ReduceBy(parse.Rule);
+            this.ReduceBy(singleParse.Rule);
         }
 
         private void ClearScanAhead()
         {
             // note: in an optimized implementation a single shared buffer can be used for the parser
             var buffer = new Stack<ScanAheadAction>();
-            CleanScanAhead();
+            CleanScanAhead(contextSymbol: null);
 
             while (buffer.Count > 0) // replay from the buffer
             {
@@ -140,14 +158,23 @@ namespace Forelle.Tests.Parsing.Construction
             }
 
             // "cleans" the scan ahead stack by removing complex parse nodes
-            void CleanScanAhead()
+            void CleanScanAhead(Symbol contextSymbol)
             {
                 if (this._scanAheadStack.Count == 0) { return; }
 
                 var next = this._scanAheadStack.Pop();
                 if (next.Parse != null)
                 {
-                    CleanScanAheadWithParse(next.Parse);
+                    if (next.Parse.Count == 1)
+                    {
+                        CleanScanAheadWithParse(next.Parse.Single());
+                    }
+                    else
+                    {
+                        var matches = next.Parse.Where(p => p.Symbol == contextSymbol).ToArray();
+                        Invariant.Require(matches.Length == 1, "Unable to resolve multiple scanner parse");
+                        CleanScanAheadWithParse(matches.Single());
+                    }
                 }
                 else
                 {
@@ -169,7 +196,7 @@ namespace Forelle.Tests.Parsing.Construction
                     }
                     else
                     {
-                        CleanScanAhead();
+                        CleanScanAhead(parse.Children[i].Symbol);
                     }
                 }
             }
@@ -208,13 +235,13 @@ namespace Forelle.Tests.Parsing.Construction
 
             public ScanAheadAction(ParseNode token) { this._value = token; }
             public ScanAheadAction(Rule rule) { this._value = rule; }
-            public ScanAheadAction(PotentialParseParentNode parse) { this._value = parse; }
+            public ScanAheadAction(ImmutableHashSet<PotentialParseParentNode> parse) { this._value = parse; }
 
             public ParseNode ParsedToken => this._value as ParseNode;
             public Rule Rule => this._value as Rule;
-            public PotentialParseParentNode Parse => this._value as PotentialParseParentNode;
+            public ImmutableHashSet<PotentialParseParentNode> Parse => this._value as ImmutableHashSet<PotentialParseParentNode>;
 
-            public override string ToString() => this._value.ToString();
+            public override string ToString() => this.Parse != null ? string.Join(" | ", this.Parse) : this._value.ToString();
         }
     }
 

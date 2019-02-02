@@ -43,8 +43,8 @@ namespace Forelle.Tests.Parsing.Construction
                     case ReduceAction reduce:
                         builder.AppendLine($"REDUCE BY {string.Join(" | ", reduce.Parses)}");
                         break;
-                    case ParseContextAction parseContext:
-                        builder.AppendLine($"PARSE {IdOf(parseContext.Context)}, THEN GOTO {IdOf(parseContext.Next)}");
+                    case ParseSubContextAction parseContext:
+                        builder.AppendLine($"PARSE {IdOf(parseContext.SubContext)}, THEN GOTO {IdOf(parseContext.Next)}");
                         break;
                     case TokenSwitchAction tokenSwitch:
                         foreach (var tokenSet in tokenSwitch.Switch.GroupBy(kvp => kvp.Value, kvp => kvp.Key))
@@ -54,6 +54,13 @@ namespace Forelle.Tests.Parsing.Construction
                         break;
                     case DelegateToSpecializedContextAction specialize:
                         builder.AppendLine($"GOTO {IdOf(specialize.Next)}");
+                        break;
+                    case SubContextSwitchAction subContextSwitch:
+                        builder.AppendLine($"PARSE {IdOf(subContextSwitch.SubContext)}");
+                        foreach (var @case in subContextSwitch.Switch)
+                        {
+                            builder.AppendLine($"ON {@case.Key}, GOTO {IdOf(@case.Value)}");
+                        }
                         break;
                     default:
                         throw new NotImplementedException();

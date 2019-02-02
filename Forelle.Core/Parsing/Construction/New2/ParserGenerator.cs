@@ -53,7 +53,13 @@ namespace Forelle.Parsing.Construction.New2
                 Invariant.Require(this._stateStack.Count == 1 && !this._stateStack.Peek().HasPendingContexts);
             }
 
-            return (startSymbolContexts, this._stateStack.Single().SolvedContexts);
+            var success = UnresolvedSubContextSwitchActionResolver.TryResolvePotentialSubParseSwitches(
+                this._stateStack.Single().SolvedContexts,
+                startSymbolContexts.Values,
+                out var resolvedContexts);
+            if (!success) { throw new NotImplementedException(); }
+
+            return (startSymbolContexts, resolvedContexts);
         }
 
         private ParserGenerationResult TrySolve(ParsingContext context)
@@ -85,7 +91,7 @@ namespace Forelle.Parsing.Construction.New2
             // simplest case: we have one node with a trailing cursor: just reduce
             if (nodes.Count == 1 && nodes.Single().HasTrailingCursor())
             {
-                return new ReduceAction(nodes);
+                return new ReduceAction(context, nodes);
             }
 
             // next, see if we can narrow down the node set using LL(1) lookahead
@@ -106,14 +112,14 @@ namespace Forelle.Parsing.Construction.New2
                         if (!subResult.IsSuccessful) { return subResult.ErrorContext; }
                     }
 
-                    return new TokenSwitchAction(subContexts.SelectMany(c => c.LookaheadTokens, (c, t) => (context: c, token: t)).ToDictionary(t => t.token, t => t.context));
+                    return new TokenSwitchAction(context, subContexts.SelectMany(c => c.LookaheadTokens, (c, t) => (context: c, token: t)).ToDictionary(t => t.token, t => t.context));
                 }
             }
 
             // if everything has a trailing cursor, then we're at a reduce-reduce conflict
             if (nodes.All(n => n.HasTrailingCursor()))
             {
-                return new ReduceAction(nodes);
+                return new ReduceAction(context, nodes);
             }
 
             // if just some of the nodes have a traililng cursor, then we're at a shift-reduce conflict
@@ -132,7 +138,7 @@ namespace Forelle.Parsing.Construction.New2
                 {
                     var nextContextResult = this.TrySolve(nextContext);
                     if (!nextContextResult.IsSuccessful) { return nextContextResult.ErrorContext; }
-                    return new EatTokenAction(token, next: nextContext);
+                    return new EatTokenAction(context, token, next: nextContext);
                 }
                 else
                 {
@@ -143,7 +149,7 @@ namespace Forelle.Parsing.Construction.New2
                     {
                         var nextContextResult = this.TrySolve(nextContext);
                         if (!nextContextResult.IsSuccessful) { return nextContextResult.ErrorContext; }
-                        return new ParseContextAction(nonTerminalContext, next: nextContext);
+                        return new ParseSubContextAction(context, nonTerminalContext, next: nextContext);
                     }
                 }
             }
@@ -157,14 +163,57 @@ namespace Forelle.Parsing.Construction.New2
             if (!recursiveSpecializations.ContainsValue(null))
             {
                 var recursiveContext = new ParsingContext(recursiveSpecializations.Values, context.LookaheadTokens);
-                if (recursiveContext.Nodes.Count > 1) { throw new NotImplementedException("todo discriminator"); }
                 var recursiveResult = this.TrySolve(recursiveContext);
                 if (!recursiveResult.IsSuccessful) { return recursiveResult.ErrorContext; }
-                var nextContext = this.CreateContext(recursiveSpecializations.Select(kvp => SpecializationRecursionHelper.AdvanceCursorPastSubtree(kvp.Key, kvp.Value)));
-                var nextResult = this.TrySolve(nextContext);
-                if (!nextResult.IsSuccessful) { return nextResult.ErrorContext; }
-                return new ParseContextAction(recursiveContext, nextContext);
+
+                // at this point, we don't know whether the recursive context will be able to help us in discriminating
+                // between possible end parses. First, we construct the "minimal" next contexts which makes the most
+                // optimistic assumption about how the recursive context will be able to help us
+                var nextNodes = recursiveSpecializations.ToDictionary(
+                    kvp => kvp.Key, 
+                    kvp => SpecializationRecursionHelper.AdvanceCursorPastSubtree(node: kvp.Key, subtree: kvp.Value)
+                );
+                var minimalNextContexts = recursiveSpecializations.GroupBy(
+                        kvp => kvp.Value, 
+                        kvp => nextNodes[kvp.Key], 
+                        PotentialParseNodeWithCursorComparer.Instance
+                    )
+                    .Select(this.CreateContext)
+                    .ToArray();
+                foreach (var minimalNextContext in minimalNextContexts)
+                {
+                    var nextResult = this.TrySolve(minimalNextContext);
+                    // if we can't solve any one of the minimal next contexts, then we won't be 
+                    // able to proceed under worse conditions
+                    if (!nextResult.IsSuccessful) { return nextResult.ErrorContext; }
+                }
+
+                // if we had only one minimal next context (indicating a recursive context with one node),
+                // then we know we won't get any additional information from the recursive context. So, we
+                // just parse the recursive context and move on to the minimal next context
+                if (minimalNextContexts.Length == 1)
+                {
+                    return new ParseSubContextAction(context, recursiveContext, minimalNextContexts.Single());
+                }
+
+                // otherwise, we may be able to learn something from the recursive context. So we will attempt
+                // to solve all combinations of the minimal contexts which might be required dependending on what
+                // the recursive context tells us
+                var solvableCombinedNextContexts = SpecializationRecursionHelper.GetAllCombinedContexts(minimalNextContexts)
+                    .Where(c => this.TrySolve(c).IsSuccessful);
+                // we use an unresolved switch action here because we might not be able to tell right now what we could learn
+                // from our recursive context (it may depend on contexts we are still in the process of solving) and therefore 
+                // we don't know which next contexts we might need to handle
+                return new UnresolvedSubContextSwitchAction(
+                    context,
+                    subContext: recursiveContext,
+                    potentialNextContexts: solvableCombinedNextContexts,
+                    @switch: recursiveSpecializations.Select(kvp => (subParseNode: kvp.Value, nextNode: nextNodes[kvp.Key])),
+                    nextToCurrentNodeMapping: nextNodes.Select(kvp => (next: kvp.Value, current: kvp.Key))
+                );
             }
+
+            // todo try to specialize with a common required next nonterminal instead of a single token?
 
             // in order to specialize, we need a single lookahead token. If we have 
             // more than  one, branch on token
@@ -177,22 +226,22 @@ namespace Forelle.Parsing.Construction.New2
                     if (!subResult.IsSuccessful) { return subResult.ErrorContext; }
                 }
 
-                return new TokenSwitchAction(lookaheadTokensToSubContexts);
+                return new TokenSwitchAction(context, lookaheadTokensToSubContexts);
             }
 
             // see if we can specialize
-            var specialized = new List<PotentialParseParentNode>();
+            var specializations = new List<(PotentialParseParentNode next, PotentialParseParentNode current)>();
             foreach (var node in nodes)
             {
-                var nodeSpecialized = this.TrySpecialize(node, context.LookaheadTokens.Single());
-                if (nodeSpecialized == null) { return context; }
-                specialized.AddRange(nodeSpecialized);
+                var specializationsOfNode = this.TrySpecialize(node, context.LookaheadTokens.Single());
+                if (specializationsOfNode == null) { return context; }
+                specializations.AddRange(specializationsOfNode.Select(s => (next: s, current: node)));
             }
             
-            var specializedContext = new ParsingContext(specialized, context.LookaheadTokens);
+            var specializedContext = new ParsingContext(specializations.Select(t => t.next), context.LookaheadTokens);
             var specializedContextResult = this.TrySolve(specializedContext);
             if (!specializedContextResult.IsSuccessful) { return specializedContextResult.ErrorContext; }
-            return new DelegateToSpecializedContextAction(specializedContext);
+            return new DelegateToSpecializedContextAction(context, specializedContext, specializations);
         }
 
         private ParsingContext CreateContext(IEnumerable<PotentialParseParentNode> nodes)
@@ -279,7 +328,7 @@ namespace Forelle.Parsing.Construction.New2
         {
             Invariant.Require(leafCount > 0);
 
-            var oldCursorLeafIndex = GetCursorLeafIndex(node);
+            var oldCursorLeafIndex = node.GetCursorLeafIndex();
             var newCursorLeafIndex = oldCursorLeafIndex + leafCount;
             Invariant.Require(newCursorLeafIndex <= node.LeafCount);
 
@@ -333,27 +382,6 @@ namespace Forelle.Parsing.Construction.New2
             }
         }
 
-        // todo copied method
-        private static int GetCursorLeafIndex(PotentialParseNode node)
-        {
-            var cursorPosition = node.CursorPosition.Value;
-
-            if (node is PotentialParseParentNode parent)
-            {
-                if (cursorPosition == parent.Children.Count) { return node.LeafCount; } // trailing cursor
-
-                // sum leaves before the cursor child plus any leaves within the cursor child that are before the cursor
-                var result = GetCursorLeafIndex(parent.Children[cursorPosition]);
-                for (var i = 0; i < cursorPosition; ++i)
-                {
-                    result += parent.Children[i].LeafCount;
-                }
-                return result;
-            }
-
-            return cursorPosition == 0 ? 0 : 1;
-        }
-
         private IReadOnlyCollection<PotentialParseParentNode> TrySpecialize(
             PotentialParseParentNode node, 
             Token lookahead)
@@ -364,7 +392,7 @@ namespace Forelle.Parsing.Construction.New2
 
             if (cursorSymbol == lookahead) { return new[] { node }; }
             
-            var cursorLeafIndex = GetCursorLeafIndex(node);
+            var cursorLeafIndex = node.GetCursorLeafIndex();
             var result = new List<PotentialParseParentNode>();
             foreach (var expansionRule in this._rulesByProduced[(NonTerminal)cursorSymbol])
             {

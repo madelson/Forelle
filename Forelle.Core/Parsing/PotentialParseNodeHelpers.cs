@@ -81,6 +81,26 @@ namespace Forelle.Parsing
             return (TNode)result;
         }
 
+        public static int GetCursorLeafIndex(this PotentialParseNode node)
+        {
+            var cursorPosition = node.CursorPosition.Value;
+
+            if (node is PotentialParseParentNode parent)
+            {
+                if (cursorPosition == parent.Children.Count) { return node.LeafCount; } // trailing cursor
+
+                // sum leaves before the cursor child plus any leaves within the cursor child that are before the cursor
+                var result = GetCursorLeafIndex(parent.Children[cursorPosition]);
+                for (var i = 0; i < cursorPosition; ++i)
+                {
+                    result += parent.Children[i].LeafCount;
+                }
+                return result;
+            }
+
+            return cursorPosition == 0 ? 0 : 1;
+        }
+
         public static PotentialParseLeafNode GetLeafAtCursorPosition(this PotentialParseNode node)
         {
             switch (node)

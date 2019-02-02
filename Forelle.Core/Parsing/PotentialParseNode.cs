@@ -64,6 +64,8 @@ namespace Forelle.Parsing
             ? $"\"{symbol.Name}\""
             : symbol.Name;
 
+        private string DebugView => this.ToMarkedString();
+
         public struct SymbolRuleOrNode
         {
             internal SymbolRuleOrNode(PotentialParseNode node)
