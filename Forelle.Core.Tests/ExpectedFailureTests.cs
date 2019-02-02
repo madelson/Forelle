@@ -71,7 +71,7 @@ namespace Forelle.Tests
 
             parser.Parse(new[] { LeftParen, LeftParen, LeftParen, Id, RightParen, RightParen, RightParen, Plus }, Stmt)
                 .ToString()
-                .ShouldEqual("Stmt(A('(' A('(' A('(' A(?) ')') ')') ')') +)");
+                .ShouldEqual("Stmt(A('(' A('(' A('(' A(ID) ')') ')') ')') +)");
 
             Assert.Throws<InvalidOperationException>(() => parser.Parse(new[] { LeftParen, LeftParen, LeftParen, Id, RightParen, RightParen, RightParen, Minus }, Stmt));
         }
@@ -219,7 +219,9 @@ namespace Forelle.Tests
                 { Exp, Exp, Plus, Exp }
             };
 
-            var (parser, errors) = ParserGeneratorTest.CreateParser(rules);
+            // todo at least one problem here is that tryspecialize fails on any trailing cursor, but in the case where there's
+            // just one specialization this is actually ok!
+            var (parser, errors) = ParserGeneratorTest.CreateParser2(rules);
             Assert.IsEmpty(errors);
         }
     }
