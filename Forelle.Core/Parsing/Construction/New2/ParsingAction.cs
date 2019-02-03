@@ -151,7 +151,7 @@ namespace Forelle.Parsing.Construction.New2
                 PotentialParseNode.Comparer.As<IEqualityComparer<PotentialParseParentNode>>()
             );
     }
-    
+
     internal sealed class DelegateToSpecializedContextAction : ParsingAction
     {
         private readonly IReadOnlyCollection<(PotentialParseParentNode next, PotentialParseParentNode current)> _nextToCurrentNodeMapping;

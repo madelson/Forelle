@@ -123,17 +123,25 @@ namespace Forelle.Parsing.Construction.New2
         /// <summary>
         /// Given <paramref name="node"/> and a <paramref name="subtree"/> occurring within it where the cursor
         /// is on <paramref name="subtree"/>, returns a new <see cref="PotentialParseParentNode"/> where the cursor
-        /// is in the first valid position that is not part of <paramref name="subtree"/>
+        /// is in the first valid position that is not part of <paramref name="subtree"/>.
+        /// 
+        /// Additionally, <paramref name="subtree"/> is replaced with a <see cref="PotentialParseLeafNode"/> with the same
+        /// <see cref="Symbol"/> as <paramref name="subtree"/>.
         /// </summary>
         public static PotentialParseParentNode AdvanceCursorPastSubtree(PotentialParseParentNode node, PotentialParseParentNode subtree)
         {
             Invariant.Require(!node.HasTrailingCursor());
+            Invariant.Require(node != subtree);
             Invariant.Require(subtree.CursorPosition.HasValue);
-            return AdvanceCursorPastSubtree(node);
+            // this cast will always succeed because by definition a recursive subtree cannot be the whole node
+            return (PotentialParseParentNode)AdvanceCursorPastSubtree(node);
 
-            PotentialParseParentNode AdvanceCursorPastSubtree(PotentialParseParentNode current)
+            PotentialParseNode AdvanceCursorPastSubtree(PotentialParseParentNode current)
             {
-                if (current == subtree) { return current.WithoutCursor().WithTrailingCursor(); }
+                if (current == subtree)
+                {
+                    return new PotentialParseLeafNode(current.Symbol, cursorPosition: 1);
+                }
 
                 var cursorPosition = current.CursorPosition.Value;
                 var childWithCursor = current.Children[cursorPosition];

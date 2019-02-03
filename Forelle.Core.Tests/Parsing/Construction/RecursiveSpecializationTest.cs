@@ -59,5 +59,115 @@ namespace Forelle.Tests.Parsing.Construction
                 .ToString()
                 .ShouldEqual("A(B('(' B('(' B() ')') ')') '(' '(' B('(' B() ')') ')' ')')");
         }
+        
+        [Test]
+        public void TestDifferentiablePrefixGrammar()
+        {
+            var rules = new Rules
+            {
+                { A, Id },
+                { A, LeftParen, A, RightParen },
+                { B, QuestionMark },
+                { B, LeftParen, B, RightParen },
+
+                // these rules force us to differentiate between A + and B -
+                { Stmt, A, Plus },
+                { Stmt, B, Minus },
+
+                // these rules force us to differentiate between A and B which
+                // can serve as a prefix for the above
+                { Exp, A },
+                { Exp, B },
+            };
+
+            var (parser, errors) = ParserGeneratorTest.CreateParser2(rules);
+            Assert.IsEmpty(errors);
+
+            parser.Parse(new[] { LeftParen, Id, RightParen }, Exp)
+                .ToString()
+                .ShouldEqual("Exp(A('(' A(ID) ')'))");
+
+            parser.Parse(new[] { LeftParen, QuestionMark, RightParen, Minus }, Stmt)
+                .ToString()
+                .ShouldEqual("Stmt(B('(' B(?) ')') -)");
+
+            // when we take away these rules, we don't have anything to force us to consider A | B
+            // directly. Instead, we must figure this out through specialization
+            rules.Remove(rules[Exp, A]).ShouldEqual(true);
+            rules.Remove(rules[Exp, B]).ShouldEqual(true);
+
+            (parser, errors) = ParserGeneratorTest.CreateParser2(rules);
+            Assert.IsEmpty(errors);
+
+            parser.Parse(new[] { LeftParen, LeftParen, QuestionMark, RightParen, RightParen, Minus }, Stmt)
+                .ToString()
+                .ShouldEqual("Stmt(B('(' B('(' B(?) ')') ')') -)");
+
+            parser.Parse(new[] { LeftParen, LeftParen, LeftParen, Id, RightParen, RightParen, RightParen, Plus }, Stmt)
+                .ToString()
+                .ShouldEqual("Stmt(A('(' A('(' A('(' A(ID) ')') ')') ')') +)");
+
+            Assert.Throws<InvalidOperationException>(() => parser.Parse(new[] { LeftParen, LeftParen, LeftParen, Id, RightParen, RightParen, RightParen, Minus }, Stmt));
+        }
+
+        [Test]
+        public void TestNonDifferentiablePrefixGrammar()
+        {
+            // The difference between this test and TestDifferentiablePrefixGrammar is
+            // that in this grammar A and B cannot be differentiated absent context.Therefore,
+            // we cannot generate a discriminator for A | B although we CAN generate a recognizer
+
+            var rules = new Rules
+            {
+                { A, Id },
+                { A, LeftParen, A, RightParen },
+                { B, Id },
+                { B, LeftParen, B, RightParen },
+
+                // these rules force us to generate a discriminator for A + | B -
+                { Stmt, A, Plus },
+                { Stmt, B, Minus },
+            };
+            
+            var (parser, errors) = ParserGeneratorTest.CreateParser2(rules);
+            Assert.IsEmpty(errors);
+
+            parser.Parse(new[] { LeftParen, LeftParen, Id, RightParen, RightParen, Plus }, Stmt)
+                .ToString()
+                .ShouldEqual("Stmt(A('(' A('(' A(ID) ')') ')') +)");
+
+            parser.Parse(new[] { LeftParen, Id, RightParen, Minus }, Stmt)
+                .ToString()
+                .ShouldEqual("Stmt(B('(' B(ID) ')') -)");
+        }
+
+        [Test]
+        public void TestDifferentiablePrefixWithNonDifferentiableSuffixGrammar()
+        {
+            // similar to TestDifferentiablePrefixGrammar, but in this case the suffix
+            // after the differentiable prefix is non-differentiable
+
+            var rules = new Rules
+            {
+                { A, Id },
+                { A, LeftParen, A, RightParen },
+                { B, QuestionMark },
+                { B, LeftParen, B, RightParen },
+                
+                { Stmt, A, Plus },
+                { Stmt, B, Plus }
+            };
+
+            var (parser, errors) = ParserGeneratorTest.CreateParser2(rules);
+            Assert.IsEmpty(errors);
+
+            parser.Parse(new[] { LeftParen, QuestionMark, RightParen, Plus }, Stmt)
+                .ToString()
+                .ShouldEqual("Stmt(B('(' B(?) ')') +)");
+
+            parser.Parse(new[] { LeftParen, LeftParen, LeftParen, Id, RightParen, RightParen, RightParen, Plus }, Stmt)
+                .ToString()
+                .ShouldEqual("Stmt(A('(' A('(' A('(' A(ID) ')') ')') ')') +)");
+        }
     }
 }
