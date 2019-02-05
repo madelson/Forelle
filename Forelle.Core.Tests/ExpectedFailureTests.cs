@@ -123,5 +123,28 @@ namespace Forelle.Tests
             var (parser, errors) = ParserGeneratorTest.CreateParser(rules);
             Assert.IsEmpty(errors);
         }
+
+        [Test]
+        public void ExpectFailure_LookaheadProblem()
+        {
+            // this is an interesting little grammar where we have a shift/reduce conflict parsing B on +.
+            // Specialization does not help because it does not eliminate the conflict before becoming
+            // recursive. That said, at the point of conflict we could look ahead by 2 tokens in order to
+            // make our decision. We'd need to know that when B is followed by + it's always by "+ -".
+            // That seems easy, but if there were an undetermined-lengh non-terminal between the + and - we'd
+            // need full LL(LL) lookahead in order to tell the difference. The worst case would be something like
+            // C -> + C + | -, since this would still be unambiguous but would require going all the way to the end
+            // in order to discriminate
+
+            var rules = new Rules
+            {
+                { A, B, Plus, Minus },
+                { B, Plus, B },
+                { B }
+            };
+
+            var (parser, errors) = ParserGeneratorTest.CreateParser2(rules);
+            Assert.IsEmpty(errors);
+        }
     }
 }
