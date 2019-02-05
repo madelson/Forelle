@@ -48,7 +48,7 @@ namespace Forelle.Parsing.Construction.New2
                 var result = this.TrySolve(startSymbolContext);
                 if (!result.IsSuccessful)
                 {
-                    throw new NotImplementedException();
+                    throw new NotImplementedException($"Failure context:{Environment.NewLine}{result.ErrorContext}");
                 }
                 Invariant.Require(this._stateStack.Count == 1 && !this._stateStack.Peek().HasPendingContexts);
             }
