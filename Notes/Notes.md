@@ -67,3 +67,6 @@ IDEAS 1/27/2019
 
 IDEAS 1/28/2019
 - When parsing a lookpast, it will leave behind a reduction in the scan-ahead with multiple nodes. In cleaning the scan-ahead, we can simply fix this by picking the right rule to reduce by based on the encapsulating parse!
+
+IDEAS 2/6/2019
+- Possible alg for dealing with indirect left recursion: https://pdfs.semanticscholar.org/23ad/9006fa939ada5f212852320f886676b8e519.pdf
