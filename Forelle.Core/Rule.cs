@@ -116,7 +116,7 @@ namespace Forelle
             bool? isRightAssociative = null,
             IEnumerable<ParserStateVariableRequirement> parserStateRequirements = null,
             IEnumerable<ParserStateVariableAction> parserStateActions = null,
-            Option<IEnumerable<Rule>> mappedRules = default(Option<IEnumerable<Rule>>))
+            Option<IEnumerable<Rule>> mappedRules = default)
         {
             return new ExtendedRuleInfo(
                 isRightAssociative ?? this.IsRightAssociative,
