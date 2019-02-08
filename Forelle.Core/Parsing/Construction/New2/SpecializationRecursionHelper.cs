@@ -9,115 +9,93 @@ namespace Forelle.Parsing.Construction.New2
 {
     internal static class SpecializationRecursionHelper
     {
-        /// <summary>
-        /// Given the path of expanded rules from the cursor of <paramref name="node"/>, identifies the longest
-        /// pattern A B C... that repeats. This indicates that recursive expansion has occurred
-        /// </summary>
-        public static PotentialParseParentNode GetRecursiveSubtreeOrDefault(PotentialParseParentNode node)
+        public static IEnumerable<ParsingContext> EnumerateSubContexts(ParsingContext context)
         {
-            // todo want to start recursing earlier and on a leaf node
+            // TODO an open question I have is whether we should bother considering sub-contexts that include
+            // top-level nodes. For example, if we have A(B(.B ;)) | A(.B ;), should we consider B(.B ;) vs A(.B ;)?
+            // if we decide to support top-level nodes, we need to make sure we don't pick ALL top-level nodes, 
+            // we need to change the upfront check, and we need to remove the exclusion in subNodesLists
 
-            if (node.HasTrailingCursor()) { return null; }
-
-            var subtreeParts = GetSubtreePartsFromRoot(node);
-            subtreeParts.Reverse();
-            
-            var maxRecurrenceLength = 0;
-            while (HasRecurrence(maxRecurrenceLength + 1)) { ++maxRecurrenceLength; }
-
-            return maxRecurrenceLength > 0
-                ? subtreeParts[maxRecurrenceLength - 1].Node 
-                : null;
-            
-            bool HasRecurrence(int recurrenceLength)
+            // all nodes must have deep structure and no trailing cursor
+            if (context.Nodes.Any(n => n.HasTrailingCursor() || !(n.Children[n.CursorPosition.Value] is PotentialParseParentNode)))
             {
-                // note: we start searching from recurrenceLength because otherwise any recurrence we find would overlap the pattern
-                // at the beginning. Given the condition below which does not allow internal repetition within a recurrence, an overlapping
-                // pattern like this can never succeed
-                for (var recurrenceStart = recurrenceLength; recurrenceStart < subtreeParts.Count - (recurrenceLength - 1); ++recurrenceStart)
+                return Enumerable.Empty<ParsingContext>();
+            }
+
+            // for each node, build the list of usable sub nodes that could form a sub context
+            var subNodesLists = new List<List<PotentialParseParentNode>>(capacity: context.Nodes.Count);
+            foreach (var node in context.Nodes)
+            {
+                var subNodesList = new List<PotentialParseParentNode>();
+
+                var currentNode = node;
+                do
                 {
-                    if (IsRecurrence()) { return true; }
-
-                    bool IsRecurrence()
-                    {
-                        for (var i = 0; i < recurrenceLength; ++i)
-                        {
-                            if (!subtreeParts[i].Equals(subtreeParts[recurrenceStart + i])
-                                // if the recurrence itself recurs, then reject it. For example, if we find A B A as
-                                // a repeating pattern, we want to just identify A B instead since that is the minimal unit
-                                // that repeats. Note that we will allow A B B, despite B technically being a recurrence
-                                // because this only comes up if we earlier found B but couldn't use it because another path
-                                // was not yet recursive
-                                || (i > 0 && subtreeParts[0].Equals(subtreeParts[i])))
-                            {
-                                return false;
-                            }
-                        }
-
-                        return true;
-                    }
+                    if (currentNode != node) { subNodesList.Add(currentNode); } // exclude top-level
+                    currentNode = currentNode.Children[currentNode.CursorPosition.Value] as PotentialParseParentNode;
                 }
+                while (currentNode != null);
 
-                return false;
+                subNodesLists.Add(subNodesList);
+            }
+
+            var nodesArray = context.Nodes.ToArray();
+            return Traverse.DepthFirst(
+                    root: (nodes: ImmutableHashSet.Create(context.Nodes.KeyComparer), nextIndex: 0),
+                    children: BuildSubContexts
+                )
+                // todo we should filter out cases where one is a subcontext of the other?
+                .Where(t => t.nextIndex == nodesArray.Length)
+                .Select(t => new ParsingContext(t.nodes, context.LookaheadTokens));
+
+            IEnumerable<(ImmutableHashSet<PotentialParseParentNode> nodes, int nextIndex)> BuildSubContexts((ImmutableHashSet<PotentialParseParentNode> nodes, int nextIndex) current)
+            {
+                if (current.nextIndex == nodesArray.Length) { yield break; }
+
+                var subNodesList = subNodesLists[current.nextIndex];
+                // enumerate backwards to prefer smaller sub contexts to larger ones
+                for (var i = subNodesList.Count - 1; i >= 0; --i)
+                {
+                    yield return (current.nodes.Add(subNodesList[i]), current.nextIndex + 1);
+                }
             }
         }
 
-        private static List<SubtreePart> GetSubtreePartsFromRoot(PotentialParseParentNode node)
+        /// <summary>
+        /// Determines whether <paramref name="subtree"/> appears in <paramref name="supertree"/>
+        /// </summary>
+        public static bool IsCursorSubtreeOf(this PotentialParseParentNode subtree, PotentialParseParentNode supertree)
         {
-            var result = new List<SubtreePart>();
-            PotentialParseNode current = node;
-            while (current is PotentialParseParentNode parent)
+            var currentSupertree = supertree;
+            do
             {
-                result.Add(new SubtreePart(parent));
-                current = parent.Children[parent.CursorPosition.Value];
-            }
+                if (PotentialParseNodeWithCursorComparer.Instance.Equals(subtree, currentSupertree)) { return true; }
 
-            return result;
+                currentSupertree = currentSupertree.Children[currentSupertree.CursorPosition.Value] as PotentialParseParentNode;
+            }
+            while (currentSupertree != null);
+
+            return false;
         }
 
-        // todo this should probably be changed to be a comparer
         /// <summary>
-        /// Provides equality based on (a) the <see cref="Rule"/> being expanded, (b)
-        /// the <see cref="PotentialParseNode.CursorPosition"/>, and (c) the
-        /// <see cref="PotentialParseParentNode.Children"/> occurring before the cursor
+        /// Determines whether <paramref name="node"/> contains multiple expansions of the same node
+        /// along the path to the cursor
         /// </summary>
-        private readonly struct SubtreePart : IEquatable<SubtreePart>
+        public static bool HasRecursiveExpansion(PotentialParseParentNode node)
         {
-            public SubtreePart(PotentialParseParentNode node)
+            if (node.HasTrailingCursor()) { return false; }
+
+            var rules = new HashSet<Rule>();
+            var current = node;
+            do
             {
-                this.Node = node;
+                if (!rules.Add(current.Rule)) { return true; }
+                current = current.Children[current.CursorPosition.Value] as PotentialParseParentNode;
             }
+            while (current != null);
 
-            public PotentialParseParentNode Node { get; }
-
-            public bool Equals(SubtreePart other)
-            {
-                if (other.Node.Rule != this.Node.Rule
-                    || other.Node.CursorPosition != this.Node.CursorPosition)
-                {
-                    return false;
-                }
-
-                for (var i = 0; i < this.Node.CursorPosition.Value; ++i)
-                {
-                    if (!PotentialParseNode.Comparer.Equals(this.Node.Children[i], other.Node.Children[i]))
-                    {
-                        return false;
-                    }
-                }
-
-                return true;
-            }
-
-            public override int GetHashCode()
-            {
-                var hash = this.Node.Rule.GetHashCode();
-                for (var i = 0; i < this.Node.CursorPosition.Value; ++i)
-                {
-                    hash = (hash, PotentialParseNode.Comparer.GetHashCode(this.Node.Children[i])).GetHashCode();
-                }
-                return hash;
-            }
+            return false;
         }
 
         /// <summary>
@@ -128,7 +106,10 @@ namespace Forelle.Parsing.Construction.New2
         /// Additionally, <paramref name="subtree"/> is replaced with a <see cref="PotentialParseLeafNode"/> with the same
         /// <see cref="Symbol"/> as <paramref name="subtree"/>.
         /// </summary>
-        public static PotentialParseParentNode AdvanceCursorPastSubtree(PotentialParseParentNode node, PotentialParseParentNode subtree)
+        public static PotentialParseParentNode AdvanceCursorPastSubtree(
+            PotentialParseParentNode node, 
+            PotentialParseParentNode subtree,
+            SubContextPlaceholderSymbolInfo.Factory placeholderFactory)
         {
             Invariant.Require(!node.HasTrailingCursor());
             Invariant.Require(node != subtree);
@@ -138,9 +119,10 @@ namespace Forelle.Parsing.Construction.New2
 
             PotentialParseNode AdvanceCursorPastSubtree(PotentialParseParentNode current)
             {
-                if (current == subtree)
+                if (PotentialParseNodeWithCursorComparer.Instance.Equals(current, subtree))
                 {
-                    return new PotentialParseLeafNode(current.Symbol, cursorPosition: 1);
+                    return placeholderFactory.GetPlaceholderNode(subtree);
+                    //return new PotentialParseLeafNode(current.Symbol, cursorPosition: 1);
                 }
 
                 var cursorPosition = current.CursorPosition.Value;

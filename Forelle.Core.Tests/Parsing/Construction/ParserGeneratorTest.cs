@@ -106,6 +106,19 @@ namespace Forelle.Tests.Parsing.Construction
             // [ [ id; ] [ [] id ] ];
             parser.Parse(new[] { OpenBracket, OpenBracket, Id, SemiColon, CloseBracket, OpenBracket, OpenBracket, CloseBracket, Id, CloseBracket, CloseBracket, SemiColon }, Stmt);
             parser.Parsed.ToString().ShouldEqual("Stmt(Exp([, List<Exp>(Exp([, Stmt(Exp(ID), ;), List<Stmt>, ]), List<Exp>(Exp([, List<Exp>(Exp([, List<Exp>, ]), List<Exp>(Exp(ID), List<Exp>)), ]), List<Exp>)), ]), ;)");
+
+            var (parser2, errors2) = CreateParser2(rules);
+            Assert.IsEmpty(errors2);
+
+            // [];
+            parser2.Parse(new[] { OpenBracket, CloseBracket, SemiColon }, Stmt)
+                .ToString()
+                .ShouldEqual("Stmt(Exp([ List<Exp>() ]) ;)");
+
+            // [ [ id; ] [ [] id ] ];
+            parser2.Parse(new[] { OpenBracket, OpenBracket, Id, SemiColon, CloseBracket, OpenBracket, OpenBracket, CloseBracket, Id, CloseBracket, CloseBracket, SemiColon }, Stmt)
+                .ToString()
+                .ShouldEqual("Stmt(Exp([ List<Exp>(Exp([ Stmt(Exp(ID) ;) List<Stmt>() ]) List<Exp>(Exp([ List<Exp>(Exp([ List<Exp>() ]) List<Exp>(Exp(ID) List<Exp>())) ]) List<Exp>())) ]) ;)");
         }
 
         // test case from https://stackoverflow.com/questions/8496065/why-is-this-lr1-grammar-not-lalr1
@@ -144,7 +157,6 @@ namespace Forelle.Tests.Parsing.Construction
             parser2.Parse(new[] { a, e, a }, s)
                 .ToString()
                 .ShouldEqual("S(a E(e) a)");
-
         }
 
         // tests parsing a non-ambiguous grammar with both generics and comparison
@@ -195,6 +207,12 @@ namespace Forelle.Tests.Parsing.Construction
                 .Flatten(nameList)
                 .ToString()
                 .ShouldEqual("Exp(ID, Cmp(<), Exp(Name(ID, Gen(<, List<Name>(Name(ID, Gen(<, List<Name>(Name(ID)), >))), >))))");
+
+            var (genericsParser2, genericsErrors2) = CreateParser(genericsRules);
+            Assert.IsEmpty(genericsErrors2);
+
+            var (genericsAndComparisonParser2, genericsAndComparisonErrors2) = CreateParser2(genericsAndComparisonRules);
+            Assert.IsEmpty(genericsAndComparisonErrors2);
         }
 
         // based on https://www.gnu.org/software/bison/manual/html_node/Mysterious-Conflicts.html#Mysterious-Conflicts

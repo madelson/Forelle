@@ -13,6 +13,8 @@ namespace Forelle.Parsing.Construction.New2
         private readonly IFirstFollowProvider _firstFollow;
         private readonly IReadOnlyDictionary<Rule, PotentialParseParentNode> _defaultParses;
         private readonly IReadOnlyDictionary<NonTerminal, ParsingContext> _defaultParsingContexts;
+        private readonly Dictionary<ParsingContext, ParserGenerationResult> _failedContextCache = new Dictionary<ParsingContext, ParserGenerationResult>();
+        private readonly SubContextPlaceholderSymbolInfo.Factory _placeholderFactory = new SubContextPlaceholderSymbolInfo.Factory();
 
         private readonly Stack<ParserGeneratorState> _stateStack = new Stack<ParserGeneratorState>(); 
 
@@ -67,6 +69,11 @@ namespace Forelle.Parsing.Construction.New2
             var currentState = this._stateStack.Peek();
             if (currentState.SolvedContexts.ContainsKey(context)) { return ParserGenerationResult.Success; }
 
+            if (this._failedContextCache.TryGetValue(context, out var existingFailureResult))
+            {
+                return existingFailureResult;
+            }
+
             var newState = currentState.AddToSolve(context);
             if (newState == currentState) { return ParserGenerationResult.Success; }
 
@@ -81,7 +88,9 @@ namespace Forelle.Parsing.Construction.New2
                 return ParserGenerationResult.Success;
             }
 
-            return new ParserGenerationResult(actionOrError.ErrorContext);
+            var failureResult = new ParserGenerationResult(actionOrError.ErrorContext);
+            this._failedContextCache.Add(context, failureResult);
+            return failureResult;
         }
 
         private ParsingActionOrError TrySolveHelper(ParsingContext context)
@@ -156,61 +165,58 @@ namespace Forelle.Parsing.Construction.New2
 
             // try specializing
 
-            // first, see if we've specialized to the point where all nodes in the context are exhibiting recursion. In this case,
-            // further specialization will just get us back to this state, so instead we attempt to parse the recursive part of
-            // the context and then move on from that to the remainder of the current context
-            var recursiveSpecializations = nodes.ToDictionary(n => n, SpecializationRecursionHelper.GetRecursiveSubtreeOrDefault);
-            if (!recursiveSpecializations.ContainsValue(null))
+            // first, see if we can solve any sub-contexts of our nodes. This is required for being able to handle cases
+            // where specialization encounters recursion. It's not easy to pick out which sub-context is likely to be solvable,
+            // so we simply try them all
+            foreach (var potentialSubContext in SpecializationRecursionHelper.EnumerateSubContexts(context))
             {
-                var recursiveContext = new ParsingContext(recursiveSpecializations.Values, context.LookaheadTokens);
-                var recursiveResult = this.TrySolve(recursiveContext);
-                if (!recursiveResult.IsSuccessful) { return recursiveResult.ErrorContext; }
-
-                // at this point, we don't know whether the recursive context will be able to help us in discriminating
-                // between possible end parses. First, we construct the "minimal" next contexts which makes the most
-                // optimistic assumption about how the recursive context will be able to help us
-                var nextNodes = recursiveSpecializations.ToDictionary(
-                    kvp => kvp.Key, 
-                    kvp => SpecializationRecursionHelper.AdvanceCursorPastSubtree(node: kvp.Key, subtree: kvp.Value)
-                );
-                var minimalNextContexts = recursiveSpecializations.GroupBy(
-                        kvp => kvp.Value, 
-                        kvp => nextNodes[kvp.Key], 
-                        PotentialParseNodeWithCursorComparer.Instance
-                    )
-                    .Select(this.CreateContext)
-                    .ToArray();
-                foreach (var minimalNextContext in minimalNextContexts)
+                var subContextResult = this.TrySolve(potentialSubContext);
+                if (subContextResult.IsSuccessful)
                 {
-                    var nextResult = this.TrySolve(minimalNextContext);
-                    // if we can't solve any one of the minimal next contexts, then we won't be 
-                    // able to proceed under worse conditions
-                    if (!nextResult.IsSuccessful) { return nextResult.ErrorContext; }
-                }
+                    var nodesToSubContextNodes = nodes.ToDictionary(
+                        n => n,
+                        n => potentialSubContext.Nodes.Where(subNode => subNode.IsCursorSubtreeOf(n)).MaxBy(subNode => subNode.CountNodes())
+                    );
+                    var nodesToNextNodes = nodesToSubContextNodes.ToDictionary(
+                        kvp => kvp.Key,
+                        kvp => SpecializationRecursionHelper.AdvanceCursorPastSubtree(kvp.Key, kvp.Value, this._placeholderFactory)
+                    );
 
-                // if we had only one minimal next context (indicating a recursive context with one node),
-                // then we know we won't get any additional information from the recursive context. So, we
-                // just parse the recursive context and move on to the minimal next context
-                if (minimalNextContexts.Length == 1)
-                {
-                    return new ParseSubContextAction(context, recursiveContext, minimalNextContexts.Single());
-                }
+                    // at this point, we don't know whether the recursive context will be able to help us in discriminating
+                    // between possible end parses. First, we construct the "minimal" next contexts which makes the most
+                    // optimistic assumption about how the recursive context will be able to help us
+                    var minimalNextContexts = nodesToSubContextNodes.GroupBy(
+                            kvp => kvp.Value,
+                            kvp => nodesToNextNodes[kvp.Key],
+                            PotentialParseNodeWithCursorComparer.Instance
+                        )
+                        .Select(this.CreateContext)
+                        .Distinct()
+                        .ToArray();
+                    foreach (var minimalNextContext in minimalNextContexts)
+                    {
+                        var nextResult = this.TrySolve(minimalNextContext);
+                        // if we can't solve any one of the minimal next contexts, then we won't be 
+                        // able to proceed under worse conditions
+                        if (!nextResult.IsSuccessful) { return nextResult.ErrorContext; }
+                    }
 
-                // otherwise, we may be able to learn something from the recursive context. So we will attempt
-                // to solve all combinations of the minimal contexts which might be required dependending on what
-                // the recursive context tells us
-                var solvableCombinedNextContexts = SpecializationRecursionHelper.GetAllCombinedContexts(minimalNextContexts)
-                    .Where(c => this.TrySolve(c).IsSuccessful);
-                // we use an unresolved switch action here because we might not be able to tell right now what we could learn
-                // from our recursive context (it may depend on contexts we are still in the process of solving) and therefore 
-                // we don't know which next contexts we might need to handle
-                return new UnresolvedSubContextSwitchAction(
-                    context,
-                    subContext: recursiveContext,
-                    potentialNextContexts: solvableCombinedNextContexts,
-                    @switch: recursiveSpecializations.Select(kvp => (subParseNode: kvp.Value, nextNode: nextNodes[kvp.Key])),
-                    nextToCurrentNodeMapping: nextNodes.Select(kvp => (next: kvp.Value, current: kvp.Key))
-                );
+                    // otherwise, we may be able to learn something from the recursive context. So we will attempt
+                    // to solve all combinations of the minimal contexts which might be required dependending on what
+                    // the recursive context tells us
+                    var solvableCombinedNextContexts = SpecializationRecursionHelper.GetAllCombinedContexts(minimalNextContexts)
+                        .Where(c => this.TrySolve(c).IsSuccessful);
+                    // we use an unresolved switch action here because we might not be able to tell right now what we could learn
+                    // from our recursive context (it may depend on contexts we are still in the process of solving) and therefore 
+                    // we don't know which next contexts we might need to handle
+                    return new UnresolvedSubContextSwitchAction(
+                        context,
+                        subContext: potentialSubContext,
+                        potentialNextContexts: solvableCombinedNextContexts,
+                        @switch: nodesToSubContextNodes.Select(kvp => (subParseNode: kvp.Value, nextNode: nodesToNextNodes[kvp.Key])),
+                        nextToCurrentNodeMapping: nodesToNextNodes.Select(kvp => (next: kvp.Value, current: kvp.Key))
+                    );
+                }
             }
 
             // todo try to specialize with a common required next nonterminal instead of a single token?
@@ -227,6 +233,14 @@ namespace Forelle.Parsing.Construction.New2
                 }
 
                 return new TokenSwitchAction(context, lookaheadTokensToSubContexts);
+            }
+
+            // if we get here and all nodes are recursive, then we're stuck! We could further specialize,
+            // but because we're recursive we aren't going to find any new sub-contexts that could help us
+            // escape from the recursion
+            if (nodes.All(SpecializationRecursionHelper.HasRecursiveExpansion))
+            {
+                return context;
             }
 
             // see if we can specialize

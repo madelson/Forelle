@@ -60,7 +60,9 @@ namespace Forelle.Parsing.Construction.New2
 
         private ParsingAction Resolve(UnresolvedSubContextSwitchAction toResolve, bool requireResolution)
         {
-            var result = this.GetDifferentiableSets(toResolve, ImmutableHashSet<ParsingContext>.Empty);
+            // note: adding to visited is handled by GetDifferentiableSets(context, visited), so when we call 
+            // GetDifferentiableSets(unresolvedSubContextSwitch, visited) directly we must pre-populate it
+            var result = this.GetDifferentiableSets(toResolve, visited: ImmutableHashSet.Create(toResolve.Current));
             if (requireResolution && result.differentiableSets.Any(s => s.Count != 1))
             {
                 throw new NotImplementedException("needs ambiguity res");

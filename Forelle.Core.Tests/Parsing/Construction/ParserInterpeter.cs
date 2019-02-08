@@ -190,7 +190,13 @@ namespace Forelle.Tests.Parsing.Construction
 
                 for (var i = parse.Children.Count - 1; i >= 0; --i)
                 {
-                    if (parse.Children[i] is PotentialParseParentNode parent)
+                    if (parse.Children[i] is PotentialParseParentNode parent
+                        // when we encounter a node like A(`Placeholder<A(B)>`), just process it like we found an A since the substructure
+                        // represented by the placeholder will exist beneath us in the parse stack anyway. TODO in the future if we allow
+                        // per-rule follow sets or other ways to contextually restrict rules then we would need to change this to pass through 
+                        // the placeholder symbol and resolve the underlying substructure based on it (A(B) is more specific than resolving 
+                        // just A)
+                        && !(parent.Rule.Symbols.Count == 1 && parent.Rule.Symbols[0].SyntheticInfo is SubContextPlaceholderSymbolInfo))
                     {
                         CleanScanAheadWithParse(parent);
                     }
