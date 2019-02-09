@@ -70,3 +70,6 @@ IDEAS 1/28/2019
 
 IDEAS 2/6/2019
 - Possible alg for dealing with indirect left recursion: https://pdfs.semanticscholar.org/23ad/9006fa939ada5f212852320f886676b8e519.pdf
+
+IDEAS 2/9/2019
+- Rather than rewriting left recursion, can we instead take the LR approach to dealing with it?
