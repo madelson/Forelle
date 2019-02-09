@@ -79,19 +79,20 @@ namespace Forelle.Parsing.Construction.New2
         }
 
         /// <summary>
-        /// Determines whether <paramref name="node"/> contains multiple expansions of the same node
+        /// Determines whether <paramref name="node"/> contains multiple equivalent expansions
         /// along the path to the cursor
         /// </summary>
         public static bool HasRecursiveExpansion(PotentialParseParentNode node)
         {
             if (node.HasTrailingCursor()) { return false; }
 
-            var rules = new HashSet<Rule>();
+            var rules = new HashSet<(Rule rule, int index)>();
             var current = node;
             do
             {
-                if (!rules.Add(current.Rule)) { return true; }
-                current = current.Children[current.CursorPosition.Value] as PotentialParseParentNode;
+                var cursorPosition = current.CursorPosition.Value;
+                if (!rules.Add((current.Rule, cursorPosition))) { return true; }
+                current = current.Children[cursorPosition] as PotentialParseParentNode;
             }
             while (current != null);
 
