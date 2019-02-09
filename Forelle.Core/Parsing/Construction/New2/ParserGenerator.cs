@@ -245,13 +245,22 @@ namespace Forelle.Parsing.Construction.New2
 
             // see if we can specialize
             var specializations = new List<(PotentialParseParentNode next, PotentialParseParentNode current)>();
+            var lookahead = context.LookaheadTokens.Single();
+            var anySpecialized = false;
             foreach (var node in nodes)
             {
-                var specializationsOfNode = this.TrySpecialize(node, context.LookaheadTokens.Single());
-                if (specializationsOfNode == null) { return context; }
-                specializations.AddRange(specializationsOfNode.Select(s => (next: s, current: node)));
+                var nodeSpecializations = this.Specialize(node, lookahead);
+                anySpecialized = anySpecialized 
+                    || nodeSpecializations.Count > 1 
+                    || !PotentialParseNodeWithCursorComparer.Instance.Equals(node, nodeSpecializations[0]);
+                specializations.AddRange(nodeSpecializations.Select(s => (next: s, current: node)));
             }
             
+            if (!anySpecialized) // all specializations resulted in noops
+            {
+                return context;
+            }
+
             var specializedContext = new ParsingContext(specializations.Select(t => t.next), context.LookaheadTokens);
             var specializedContextResult = this.TrySolve(specializedContext);
             if (!specializedContextResult.IsSuccessful) { return specializedContextResult.ErrorContext; }
@@ -396,101 +405,114 @@ namespace Forelle.Parsing.Construction.New2
             }
         }
 
-        private IReadOnlyCollection<PotentialParseParentNode> TrySpecialize(
+        private IReadOnlyList<PotentialParseParentNode> Specialize(
             PotentialParseParentNode node, 
             Token lookahead)
         {
-            if (node.HasTrailingCursor()) { return null; }
-
-            var cursorSymbol = node.GetLeafAtCursorPosition().Symbol;
-
-            if (cursorSymbol == lookahead) { return new[] { node }; }
-            
-            var cursorLeafIndex = node.GetCursorLeafIndex();
-            var result = new List<PotentialParseParentNode>();
-            foreach (var expansionRule in this._rulesByProduced[(NonTerminal)cursorSymbol])
-            {
-                var expansion = this._defaultParses[expansionRule];
-                var expanded = ReplaceLeafInNode(node, cursorLeafIndex, replacement: expansion);
-                if (this.GetNextSetFromCursor(expanded).Contains(lookahead))
-                {
-                    var specialized = this.TrySpecialize(expanded, lookahead);
-                    if (specialized == null) { return null; }
-                    result.AddRange(specialized);
-                }
-            }
-            Invariant.Require(result.Count > 0);
+            var result = Specialize(node, ImmutableLinkedList<PotentialParseLeafNode>.Empty)
+                .Cast<PotentialParseParentNode>()
+                .ToArray();
+            Invariant.Require(result.Length > 0);
             return result;
-        }
 
-        // todo unused for the moment
-        private static IEnumerable<PotentialParseNode> GetPathToCursor(PotentialParseNode node)
-        {
-            var current = node;
-            while (true)
+            IEnumerable<PotentialParseNode> Specialize(PotentialParseNode current, ImmutableLinkedList<PotentialParseLeafNode> cursorFollowNodes)
             {
-                yield return current;
+                // if we have a trailing cursor, we can't further expand
+                if (current.HasTrailingCursor()) { return new[] { current }; }
 
+                // if we have a parent node, expand the cursor position
                 if (current is PotentialParseParentNode parent)
                 {
-                    current = parent.Children[current.CursorPosition.Value];
-                }
-                else
-                {
-                    break;
-                }
-            }
-        }
+                    var cursorPosition = current.CursorPosition.Value;
 
-        // todo ADAPTED method from unifier
-        private static PotentialParseParentNode ReplaceLeafInNode(PotentialParseNode node, int leafIndexInNode, PotentialParseParentNode replacement)
-        {
-            if (node is PotentialParseParentNode parent)
-            {
-                var adjustedLeafIndex = leafIndexInNode;
-                for (var i = 0; i < parent.Children.Count; ++i)
-                {
-                    var child = parent.Children[i];
-                    if (child.LeafCount > adjustedLeafIndex)
+                    // tack on all nodes following the cursor
+                    var childCursorFollowNodes = cursorFollowNodes.PrependRange(
+                        Enumerable.Range(cursorPosition + 1, count: parent.Children.Count - (cursorPosition + 1))
+                            // note: this cast must succeed since currently we always specialize a node from beginning to end,
+                            // so all non-leaf nodes are behind or at the cursor
+                            .Select(i => (PotentialParseLeafNode)parent.Children[i])
+                    );
+
+                    var childWithCursor = parent.Children[cursorPosition];
+                    var childWithCursorSpecializations = Specialize(childWithCursor, childCursorFollowNodes);
+                    return childWithCursorSpecializations.SelectMany(childSpecialization =>
                     {
-                        // rebuild child
-                        var childWithLeafReplaced = ReplaceLeafInNode(child, adjustedLeafIndex, replacement);
+                        // if specialization was a noop, noop
+                        if (childSpecialization == childWithCursor) { return new[] { current }; }
 
-                        // we need to handle the edge case when the original child had a non-trailing cursor and
-                        // the new child has a trailing cursor, which happens when replacing a cursor node with
-                        // a null production
-                        if (!child.HasTrailingCursor() && childWithLeafReplaced.HasTrailingCursor())
+                        // a trailing cursor indicates that the expansion resulted in a null child at the 
+                        // trailing edge. In this case, we move the cursor forwards and keep trying to specialize
+                        if (childSpecialization.HasTrailingCursor())
                         {
-                            // if we have any following children, tack the cursor on to the first one with leaves
-                            // or as trailing to the final one. If we have NO following children, the cursor gets re-added
-                            // as trailing to the replaced child
-                            if (i < parent.Children.Count - 1)
-                            {
-                                var indexToAddCursor = i + 1;
-                                do
+                            var updatedCurrent = new PotentialParseParentNode(
+                                parent.Rule,
+                                parent.Children.Select((ch, index) =>
                                 {
-                                    if (parent.Children[indexToAddCursor].LeafCount > 0) { break; }
-                                    ++indexToAddCursor;
-                                }
-                                while (indexToAddCursor < parent.Children.Count);
-
-                                return new PotentialParseParentNode(
-                                    parent.Rule,
-                                    parent.Children.Select((ch, index) => index == i ? childWithLeafReplaced.WithoutCursor() : index == indexToAddCursor ? parent.Children[index].WithCursor(0) : parent.Children[index])
-                                );
-                            }
+                                    if (index == cursorPosition)
+                                    {
+                                        // if the cursor was already the last index, just leave the
+                                        // child with trailing cursor; there's nowhere else to move it
+                                        return index == parent.Children.Count - 1
+                                            ? childSpecialization
+                                            : childSpecialization.WithoutCursor(); // otherwise strip the child of its cursor
+                                    }
+                                    if (index == cursorPosition + 1)
+                                    {
+                                        return ch.WithCursor(0); // give the cursor to the next child
+                                    }
+                                    return ch;
+                                })
+                            );
+                            return Specialize(updatedCurrent, cursorFollowNodes);
                         }
-                        return new PotentialParseParentNode(parent.Rule, parent.Children.Select((ch, index) => index == i ? childWithLeafReplaced : parent.Children[index]));
+
+                        // child's cursor isn't trailing, so child now must have its cursor set to the lookahead token.
+                        // So, just replace the original child with the new child
+                        return new[]
+                        {
+                            new PotentialParseParentNode(
+                                parent.Rule,
+                                parent.Children.Select((ch, index) => index == cursorPosition ? childSpecialization : ch)
+                            )
+                        };
+                    });
+                }
+                
+                if (current.Symbol == lookahead)
+                {
+                    return new[] { current }; // cursor already on lookahead token => noop
+                }
+
+                // when we get here, we must have a non-terminal since any token would have
+                // to have been the lookahead (caught above). Here, we expand the non-terminal
+                // using each rule where it can appear
+                var expansionRules = this._rulesByProduced[(NonTerminal)current.Symbol]
+                    .Where(IsValidExpansionRule);
+                return expansionRules.Select(r => this._defaultParses[r])
+                    .SelectMany(n => Specialize(n, cursorFollowNodes));
+
+                // a rule is valid if the lookahead token can be found in the first
+                // of the rule symbols, the first of the cursor follow symbols, or
+                // the follow of the top-most rule
+                bool IsValidExpansionRule(Rule rule)
+                {
+                    for (var i = 0; i < rule.Symbols.Count; ++i)
+                    {
+                        var first = this._firstFollow.FirstOf(rule.Symbols[i]);
+                        if (first.Contains(lookahead)) { return true; }
+                        if (!first.Contains(null)) { return false; }
                     }
 
-                    adjustedLeafIndex -= child.LeafCount;
+                    foreach (var followNode in cursorFollowNodes)
+                    {
+                        var first = this._firstFollow.FirstOf(followNode.Symbol);
+                        if (first.Contains(lookahead)) { return true; }
+                        if (!first.Contains(null)) { return false; }
+                    }
+
+                    return this._firstFollow.FollowOf(node.Rule).Contains(lookahead);
                 }
             }
-
-            Invariant.Require(leafIndexInNode == 0 && node.Symbol == replacement.Symbol);
-            Invariant.Require(node.CursorPosition.HasValue == replacement.CursorPosition.HasValue);
-            Invariant.Require(!node.HasTrailingCursor() || replacement.HasTrailingCursor());
-            return replacement;
         }
     }
 }
