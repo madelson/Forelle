@@ -1,0 +1,19 @@
+* Handle ambiguity in new ParserGenerator (all tests running against new code)
+* Remove old ParserGenerator and any irrelevant tests, update namespaces
+* Merge new-parser-generator branch
+* CodeGen
+	* Unused context trimming
+	* Context grouping (group together contexts that will gen a single method)
+	* Name / ID assignments for methods, constants
+	* IL (test with IL interpreter)
+	* C#
+	* JS
+* Basic Error Handling
+* Lexing
+* Pratt optimization
+* Grammar specification syntax
+* List parsing
+* LL(k) lookahead
+* Revisit indirect/hidden left recursion
+* Revisit precedence ambiguities
+* LL(LL) lookahead
