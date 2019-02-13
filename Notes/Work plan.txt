@@ -10,10 +10,12 @@
 	* JS
 * Basic Error Handling
 * Lexing
-* Pratt optimization
 * Grammar specification syntax
 * List parsing
+* Pratt optimization
 * LL(k) lookahead
 * Revisit indirect/hidden left recursion
 * Revisit precedence ambiguities
+* Revisit parser state actions (is this the right way to solve it or should we use generic symbols?)
 * LL(LL) lookahead
+* Resolve TODOs
