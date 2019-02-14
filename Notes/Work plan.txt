@@ -12,6 +12,7 @@
 * Lexing
 * Grammar specification syntax
 * List parsing
+* Ambiguity error synthetic symbol cleanup
 * Pratt optimization
 * LL(k) lookahead
 * Revisit indirect/hidden left recursion
