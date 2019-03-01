@@ -73,3 +73,20 @@ IDEAS 2/6/2019
 
 IDEAS 2/9/2019
 - Rather than rewriting left recursion, can we instead take the LR approach to dealing with it?
+
+IDEAS 2/15/2019
+- Possibly we can make our failed context caching even better by searching a trie of nodes in expansion sequence rather than searching for exact matches. For example if we know that E -> .A lookahead ID fails, then a node like E -> A(.ID B) must also fail!
+- It seems that many subcontext failures are of the form where one node in the subcontext is a proper subtree of another node. We could eliminate these at match time
+- We seem to be getting overspecialized ambiguity cases. Perhaps our unifier can detect and drop unnecessary stuff at the end to capture the minimal ambiguity
+
+IDEAS 2/26/2019
+- For non-unifiable ambiguities we should introduce a PEG node which just tries both and has a packrat cache to optimize at runtime (we only need to cache PEG node choices by position). With this + full left recursion elimination, we can handle anything!
+- When we fail to solve single non terminal for the full lookahead set we should try again with the current lookahead set. This reduces lifting
+- If we used SortedHashSets and dictionaries throughout instead of HashSets, this would enforce that the algorithm runs the same way every time. This might also help with perf because comparing 2 potential parse nodes or rules can be done more cheaply than hashing them. The one thing to be careful of is that we'd be using string comparison on symbol names. This requires an upfront check that all symbols have distinct names (and we must enforce this for synthentics as well). Should be easy enough, though.
+- If we know that A(.B x) fails, then we should also know that A(y A(.B x)) fails since there's no additional info from that nesting. To do this efficiently, in the failure cache we might need to store the smallest inner trailing node + the set of outer parent rules (since those determine follow).
+- Parsing things like HEREDOC or XML are hard because we need to match up dynamic tokens. We could actually handle this by allowing you to specify that 2 tokens in a given rule match exactly. I'm not sure whether this actually works, though.
+
+IDEAS 2/28/2019
+- Packrat parsing doesn't actually solve everything: it breaks on stuff like the palindrome grammar that PEGs can handle with backtracking
+- Can we create a "GPEG" parser which works using a GSS like GLL but is simpler in not handling left recursion and resolving conflicts via rule precedence? => need to think more about this. 
+	- Our GSS heads will be marked rules and each will have a list of tails. If we keep everything sorted, then the process of merging heads should be very fast and can be done incrementally. I think that all heads should be at the same input position
