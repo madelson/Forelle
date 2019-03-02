@@ -17,8 +17,7 @@ namespace Forelle.Tests.Parsing
     internal class TestingGraphPegParserInterpreter
     {
         private readonly ILookup<NonTerminal, Rule> _rulesByProduced;
-        // TODO should this just be rule => next set?
-        private readonly IReadOnlyDictionary<RuleRemainder, ImmutableHashSet<Token>> _nextSetsByRule;
+        private readonly IReadOnlyDictionary<Rule, ImmutableHashSet<Token>> _nextSetsByRule;
 
         /// <summary>
         /// <see cref="_heads"/> tracks the current stack heads
@@ -40,11 +39,10 @@ namespace Forelle.Tests.Parsing
             var firstFollow = FirstFollowCalculator.Create(withStartSymbols);
 
             this._rulesByProduced = withStartSymbols.ToLookup(r => r.Produced);
-            this._nextSetsByRule = withStartSymbols.SelectMany(r => Enumerable.Range(0, r.Symbols.Count + 1).Select(r.Skip))
-                .ToDictionary(
-                    r => r,
-                    r => firstFollow.NextOf(r)
-                );
+            this._nextSetsByRule = withStartSymbols.ToDictionary(
+                r => r,
+                r => firstFollow.NextOf(r)
+            );
         }
 
         public ParseNode Parse(IReadOnlyList<Token> tokens, NonTerminal symbol)
@@ -86,14 +84,14 @@ namespace Forelle.Tests.Parsing
         {
             if (this._heads.Count == 0)
             {
-                throw new InvalidOperationException($"Unexpected token {this.Peek(0)} @{this._index}");
+                throw new InvalidOperationException($"Unexpected token {this.Peek()} @{this._index}");
             }
 
             this._partiallyExpandedNewHeads.Clear();
             this._newHeads.Clear();
 
             // consume the input
-            var currentToken = this.Peek(0);
+            var currentToken = this.Peek();
             var parsedToken = new ParseNode(currentToken, this._index);
             ++this._index;
 
@@ -125,7 +123,7 @@ namespace Forelle.Tests.Parsing
                 if (AddOrMerge(node, this._partiallyExpandedNewHeads))
                 {
                     foreach (var expansionRule in this._rulesByProduced[nonTerminal]
-                        .Where(r => this._nextSetsByRule[r.Skip(0)].Contains(this.Peek(0))))
+                        .Where(r => this._nextSetsByRule[r].Contains(this.Peek())))
                     {
                         var toPush = new GraphStructureStackNode(expansionRule.Skip(0), this._index);
                         toPush.AddNext(node, parse: null);
@@ -133,7 +131,7 @@ namespace Forelle.Tests.Parsing
                     }
                 }
             }
-            else if (node.Rule.Symbols[0] == this.Peek(0))
+            else if (node.Rule.Symbols[0] == this.Peek())
             {
                 AddOrMerge(node, this._newHeads);
             }
@@ -201,13 +199,12 @@ namespace Forelle.Tests.Parsing
             list.Add(node);
             return true;
         }
-
-        // todo revisit
-        private Token Peek(int lookahead)
+        
+        private Token Peek()
         {
-            var index = this._index + lookahead;
-            return index == this._tokens.Count ? this._endToken
-                : index == this._tokens.Count + 1 ? null
+            var index = this._index;
+            return index == this._tokens.Count 
+                ? this._endToken
                 : this._tokens[index];
         }
 

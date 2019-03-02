@@ -90,3 +90,6 @@ IDEAS 2/28/2019
 - Packrat parsing doesn't actually solve everything: it breaks on stuff like the palindrome grammar that PEGs can handle with backtracking
 - Can we create a "GPEG" parser which works using a GSS like GLL but is simpler in not handling left recursion and resolving conflicts via rule precedence? => need to think more about this. 
 	- Our GSS heads will be marked rules and each will have a list of tails. If we keep everything sorted, then the process of merging heads should be very fast and can be done incrementally. I think that all heads should be at the same input position
+	
+IDEAS 2/29/2019
+- Roslyn error handling has some special cases where it can both skip and insert for similar tokens. E. g. if it sees "}" when it expected ")" it skips "}" and inserts ")" in one go
