@@ -51,7 +51,7 @@ namespace Forelle.Tests.Parsing
 
             while (this._index <= this._tokens.Count)
             {
-                Console.WriteLine($"{this._heads.Count} heads @{this._index}, {this._heads.Sum(h => h.Nexts.Count)} paths");
+                Console.WriteLine($"{this._heads.Count} heads @{this._index}, {this._heads.Sum(h => h.PreviousNodes.Count)} paths");
                 this.AdvanceParser();
             }
 
@@ -104,7 +104,7 @@ namespace Forelle.Tests.Parsing
                 Invariant.Require(head.Rule.Symbols[0] == currentToken);
 
                 var toPush = new GraphStructureStackNode(head.Rule.Skip(1), position: this._index);
-                toPush.AddNext(head, parsedToken);
+                toPush.AddPrevious(head, parsedToken);
                 this.Push(toPush);
             }
             this.SwapHeadsAndNewHeads();
@@ -129,7 +129,7 @@ namespace Forelle.Tests.Parsing
                         .Where(r => this._nextSetsByRule[r].Contains(this.Peek())))
                     {
                         var toPush = new GraphStructureStackNode(expansionRule.Skip(0), this._index);
-                        toPush.AddNext(node, parse: null);
+                        toPush.AddPrevious(node, parse: null);
                         this.Push(toPush);
                     }
                 }
@@ -142,15 +142,15 @@ namespace Forelle.Tests.Parsing
 
         private void Reduce(GraphStructureStackNode node, ImmutableLinkedList<ParseNode> children)
         {
-            if (node.Nexts.Count > 0 && node.Nexts[0].parse != null)
+            if (node.PreviousNodes.Count > 0 && node.PreviousNodes[0].parse != null)
             {
                 // this state means that we're walking backwards within the same rule, e. g. from
                 // E -> ( E .) to E -> ( .E ) to do this we simply follow each path, prepending the
                 // parse node from that path
 
-                foreach (var (nextNode, previousChild) in node.Nexts)
+                foreach (var (previousNode, previousChild) in node.PreviousNodes)
                 {
-                    this.Reduce(nextNode, children.Prepend(previousChild));
+                    this.Reduce(previousNode, children.Prepend(previousChild));
                 }
             }
             else
@@ -159,7 +159,7 @@ namespace Forelle.Tests.Parsing
                 // the parent rule (e. g. we're at E -> .( E ) and we are going back to S -> .E ;)
 
                 var parseNode = new ParseNode(node.Rule.Produced, children, startIndex: this._index - children.Sum(n => n.Width));
-                if (node.Nexts.Count == 0)
+                if (node.PreviousNodes.Count == 0)
                 {
                     // if there are no outgoing paths, then we've reached the end of the parse
 
@@ -173,11 +173,11 @@ namespace Forelle.Tests.Parsing
                     // is S -> .E ;, then we would advance the parent to get S -> E .; and connect S -> E .; to S -> .E ;
                     // with E(ID)
 
-                    // todo need to deal with 2 reductions into the same next node at the same position
-                    foreach (var (nextNode, _) in node.Nexts)
+                    // todo need to deal with 2 reductions into the same previous node at the same position
+                    foreach (var (previousNode, _) in node.PreviousNodes)
                     {
-                        var toPush = new GraphStructureStackNode(nextNode.Rule.Skip(1), this._index);
-                        toPush.AddNext(nextNode, parseNode);
+                        var toPush = new GraphStructureStackNode(previousNode.Rule.Skip(1), this._index);
+                        toPush.AddPrevious(previousNode, parseNode);
                         this.Push(toPush);
                     }
                 }
@@ -191,9 +191,9 @@ namespace Forelle.Tests.Parsing
                 if (node.Rule == existing.Rule)
                 {
                     // merge nodes by merging their paths
-                    foreach (var (nextNode, nextParse) in node.Nexts)
+                    foreach (var (previousNode, previousParse) in node.PreviousNodes)
                     {
-                        existing.AddNext(nextNode, nextParse);
+                        existing.AddPrevious(previousNode, previousParse);
                     }
                     return false;
                 }
@@ -220,7 +220,7 @@ namespace Forelle.Tests.Parsing
 
         private class GraphStructureStackNode
         {
-            private readonly List<(GraphStructureStackNode node, ParseNode parse)> _nexts = new List<(GraphStructureStackNode node, ParseNode parse)>();
+            private readonly List<(GraphStructureStackNode node, ParseNode parse)> _previousNodes = new List<(GraphStructureStackNode node, ParseNode parse)>();
 
             public GraphStructureStackNode(RuleRemainder rule, int position)
             {
@@ -231,14 +231,14 @@ namespace Forelle.Tests.Parsing
             public RuleRemainder Rule { get; }
             private int Position { get; } // for debugging
 
-            public IReadOnlyList<(GraphStructureStackNode node, ParseNode parse)> Nexts => this._nexts;
+            public IReadOnlyList<(GraphStructureStackNode node, ParseNode parse)> PreviousNodes => this._previousNodes;
 
-            public void AddNext(GraphStructureStackNode node, ParseNode parse)
+            public void AddPrevious(GraphStructureStackNode node, ParseNode parse)
             {
                 Invariant.Require(node.Position + (parse?.Width ?? 0) == this.Position);
                 Invariant.Require((parse == null && this.Rule.Start == 0) || parse.Symbol == this.Rule.Rule.Symbols[this.Rule.Start - 1]);
 
-                this._nexts.Add((node, parse));
+                this._previousNodes.Add((node, parse));
             }
 
             public override string ToString() => $"{this.Rule.Produced} -> {string.Join(" ", this.Rule.Rule.Symbols.Select((s, i) => i == this.Rule.Start ? "." + s : s.ToString()))}{(this.Rule.Symbols.Count == 0 ? "." : string.Empty)} @{this.Position}";
