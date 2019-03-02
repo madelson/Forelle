@@ -21,6 +21,7 @@
 * Pratt optimization
 * LL(k) lookahead
 * Revisit indirect/hidden left recursion
+* Revisit validator (e. g. are we handling rules like S -> S N where N is nullable?)
 * Revisit precedence ambiguities
 * Revisit parser state actions (is this the right way to solve it or should we use generic symbols?)
 * Resolve TODOs
