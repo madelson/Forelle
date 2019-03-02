@@ -84,6 +84,9 @@ namespace Forelle.Tests.Parsing
         {
             if (this._heads.Count == 0)
             {
+                // for real error handling, we can detect this after computing _newHeads. If there are no new heads,
+                // then we can either skip the token or insert a missing token based on the heads we have
+
                 throw new InvalidOperationException($"Unexpected token {this.Peek()} @{this._index}");
             }
 
