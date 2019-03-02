@@ -17,6 +17,7 @@ namespace Forelle.Tests.Parsing
     internal class TestingGraphPegParserInterpreter
     {
         private readonly ILookup<NonTerminal, Rule> _rulesByProduced;
+        private readonly IReadOnlyDictionary<Rule, int> _ruleIndices;
         private readonly IReadOnlyDictionary<Rule, ImmutableHashSet<Token>> _nextSetsByRule;
 
         /// <summary>
@@ -30,7 +31,7 @@ namespace Forelle.Tests.Parsing
         private IReadOnlyList<Token> _tokens;
         private Token _endToken;
         private int _index;
-        private ParseNode _result;
+        private InternalParseNode _result;
 
         public TestingGraphPegParserInterpreter(IReadOnlyList<Rule> rules)
         {
@@ -39,13 +40,14 @@ namespace Forelle.Tests.Parsing
             var firstFollow = FirstFollowCalculator.Create(withStartSymbols);
 
             this._rulesByProduced = withStartSymbols.ToLookup(r => r.Produced);
+            this._ruleIndices = rules.Select((r, i) => (r, i)).ToDictionary(t => t.r, t => t.i);
             this._nextSetsByRule = withStartSymbols.ToDictionary(
                 r => r,
                 r => firstFollow.NextOf(r)
             );
         }
 
-        public ParseNode Parse(IReadOnlyList<Token> tokens, NonTerminal symbol)
+        public Construction.ParseNode Parse(IReadOnlyList<Token> tokens, NonTerminal symbol)
         {
             this.ResetParser(tokens, symbol);
 
@@ -56,7 +58,7 @@ namespace Forelle.Tests.Parsing
             }
 
             Invariant.Require(this._result != null);
-            return this._result.Children[0];
+            return this._result.Children.Head.ToParseNode();
         }
 
         private void ResetParser(IReadOnlyList<Token> tokens, NonTerminal symbol)
@@ -95,7 +97,7 @@ namespace Forelle.Tests.Parsing
 
             // consume the input
             var currentToken = this.Peek();
-            var parsedToken = new ParseNode(currentToken, this._index);
+            var parsedToken = new InternalParseNode(currentToken, this._index);
             ++this._index;
 
             // for each head, advance it and push the advanced node
@@ -115,7 +117,7 @@ namespace Forelle.Tests.Parsing
             if (node.Rule.Symbols.Count == 0)
             {
                 // we've reached the end of a rule => reduce!
-                this.Reduce(node, ImmutableLinkedList<ParseNode>.Empty);
+                this.Reduce(node, ImmutableLinkedList<InternalParseNode>.Empty);
             }
             else if (node.Rule.Symbols[0] is NonTerminal nonTerminal)
             {
@@ -140,9 +142,9 @@ namespace Forelle.Tests.Parsing
             }
         }
 
-        private void Reduce(GraphStructureStackNode node, ImmutableLinkedList<ParseNode> children)
+        private void Reduce(GraphStructureStackNode node, ImmutableLinkedList<InternalParseNode> children)
         {
-            if (node.PreviousNodes.Count > 0 && node.PreviousNodes[0].parse != null)
+            if (node.Rule.Start > 0)
             {
                 // this state means that we're walking backwards within the same rule, e. g. from
                 // E -> ( E .) to E -> ( .E ) to do this we simply follow each path, prepending the
@@ -158,11 +160,13 @@ namespace Forelle.Tests.Parsing
                 // this state means we reached the beginning of a rule and we must reduce back up to
                 // the parent rule (e. g. we're at E -> .( E ) and we are going back to S -> .E ;)
 
-                var parseNode = new ParseNode(node.Rule.Produced, children, startIndex: this._index - children.Sum(n => n.Width));
+                var parseNode = new InternalParseNode(node.Rule.Rule, children, startIndex: this._index - children.Sum(n => n.Width));
                 if (node.PreviousNodes.Count == 0)
                 {
                     // if there are no outgoing paths, then we've reached the end of the parse
 
+                    // even for an ambiguous grammar, we can't ever have top-level ambiguity because any 
+                    // ambiguity must be below the level of the start rule
                     Invariant.Require(this._result == null);
                     this._result = parseNode;
                 }
@@ -172,16 +176,68 @@ namespace Forelle.Tests.Parsing
                     // parent using the child parse tree. For example if we finished parsing E as E(ID) and the parent
                     // is S -> .E ;, then we would advance the parent to get S -> E .; and connect S -> E .; to S -> .E ;
                     // with E(ID)
-
-                    // todo need to deal with 2 reductions into the same previous node at the same position
+                    
                     foreach (var (previousNode, _) in node.PreviousNodes)
                     {
-                        var toPush = new GraphStructureStackNode(previousNode.Rule.Skip(1), this._index);
-                        toPush.AddPrevious(previousNode, parseNode);
-                        this.Push(toPush);
+                        if (this.TryReduceToParent(node, parseNode, previousNode))
+                        {
+                            var toPush = new GraphStructureStackNode(previousNode.Rule.Skip(1), this._index);
+                            toPush.AddPrevious(previousNode, parseNode);
+                            this.Push(toPush);
+                        }
                     }
                 }
             }
+        }
+
+        private bool TryReduceToParent(GraphStructureStackNode node, InternalParseNode parseNode, GraphStructureStackNode parent)
+        {
+            if (parent.LastReduction != null)
+            {
+                Invariant.Require(parent.LastReduction.Width <= parseNode.Width);
+                if (parent.LastReduction.Width == parseNode.Width)
+                {
+                    var comparison = this.ComparePegPrecedence(parseNode, parent.LastReduction);
+                    Console.WriteLine($"Ambiguity @{this._index}: {parseNode} vs. {parent.LastReduction} (CHOOSING #{(comparison < 0 ? 1 : 2)})");
+                    if (comparison < 0)
+                    {
+                        // if the new parse is higher precedence, overwrite the original parse
+                        parent.LastReduction.SetParse(parseNode.Rule, parseNode.Children);
+                    }
+                    Invariant.Require(comparison != 0);
+
+                    return false;
+                }
+            }
+
+            parent.LastReduction = parseNode;
+            return true;
+        }
+
+        private int ComparePegPrecedence(InternalParseNode a, InternalParseNode b)
+        {
+            if (a == b)
+            {
+                return 0;
+            }
+            if (a.Rule == b.Rule)
+            {
+                using (var aChildren = a.Children.GetEnumerator())
+                using (var bChildren = b.Children.GetEnumerator())
+                {
+                    while (aChildren.MoveNext())
+                    {
+                        bChildren.MoveNext();
+
+                        var childComparison = this.ComparePegPrecedence(aChildren.Current, bChildren.Current);
+                        if (childComparison != 0) { return childComparison; }
+                    }
+                }
+
+                return 0;
+            }
+
+            return this._ruleIndices[a.Rule].CompareTo(this._ruleIndices[b.Rule]);
         }
 
         private static bool AddOrMerge(GraphStructureStackNode node, List<GraphStructureStackNode> list)
@@ -220,7 +276,7 @@ namespace Forelle.Tests.Parsing
 
         private class GraphStructureStackNode
         {
-            private readonly List<(GraphStructureStackNode node, ParseNode parse)> _previousNodes = new List<(GraphStructureStackNode node, ParseNode parse)>();
+            private readonly List<(GraphStructureStackNode node, InternalParseNode parse)> _previousNodes = new List<(GraphStructureStackNode node, InternalParseNode parse)>();
 
             public GraphStructureStackNode(RuleRemainder rule, int position)
             {
@@ -231,9 +287,11 @@ namespace Forelle.Tests.Parsing
             public RuleRemainder Rule { get; }
             private int Position { get; } // for debugging
 
-            public IReadOnlyList<(GraphStructureStackNode node, ParseNode parse)> PreviousNodes => this._previousNodes;
+            public InternalParseNode LastReduction { get; set; }
 
-            public void AddPrevious(GraphStructureStackNode node, ParseNode parse)
+            public IReadOnlyList<(GraphStructureStackNode node, InternalParseNode parse)> PreviousNodes => this._previousNodes;
+
+            public void AddPrevious(GraphStructureStackNode node, InternalParseNode parse)
             {
                 Invariant.Require(node.Position + (parse?.Width ?? 0) == this.Position);
                 Invariant.Require((parse == null && this.Rule.Start == 0) || parse.Symbol == this.Rule.Rule.Symbols[this.Rule.Start - 1]);
@@ -242,6 +300,97 @@ namespace Forelle.Tests.Parsing
             }
 
             public override string ToString() => $"{this.Rule.Produced} -> {string.Join(" ", this.Rule.Rule.Symbols.Select((s, i) => i == this.Rule.Start ? "." + s : s.ToString()))}{(this.Rule.Symbols.Count == 0 ? "." : string.Empty)} @{this.Position}";
+        }
+
+        private class InternalParseNode
+        {
+            public InternalParseNode(Token token, int startIndex)
+            {
+                this.Token = token;
+                this.Width = 1;
+                this.StartIndex = startIndex;
+            }
+
+            public InternalParseNode(Rule rule, ImmutableLinkedList<InternalParseNode> children, int startIndex)
+            {
+                this.Rule = rule;
+                this.Children = children;
+                this.Width = children.Sum(n => n.Width);
+                this.StartIndex = startIndex;
+            }
+
+            public Token Token { get; }
+            public Rule Rule { get; private set; }
+            public Symbol Symbol => this.Token ?? this.Rule.Produced.As<Symbol>();
+            public ImmutableLinkedList<InternalParseNode> Children { get; private set; }
+            public int Width { get; }
+            public int StartIndex { get; }
+
+            /// <summary>
+            /// Overwrites the parse tree for this node
+            /// </summary>
+            public void SetParse(Rule rule, ImmutableLinkedList<InternalParseNode> children)
+            {
+                Invariant.Require(rule.Produced == this.Rule.Produced);
+                Invariant.Require(this.Width == children.Sum(n => n.Width));
+
+                this.Rule = rule;
+                this.Children = children;
+            }
+
+            public override string ToString() => this.ToParseNode().ToString();
+
+            public ParseNode ToParseNode()
+            {
+                var parseStack = new Stack<ParseNode>();
+                Parse(this);
+                var result = parseStack.Pop();
+                Invariant.Require(parseStack.Count == 0 && result.Width == this.Width && result.StartIndex == this.StartIndex);
+                return result;
+
+                void Parse(InternalParseNode internalNode)
+                {
+                    if (internalNode.Token != null)
+                    {
+                        parseStack.Push(new ParseNode(internalNode.Token, startIndex: internalNode.StartIndex));
+                    }
+                    else
+                    {
+                        foreach (var child in internalNode.Children)
+                        {
+                            Parse(child);
+                        }
+                        ReduceBy(internalNode.Rule);
+                    }
+                }
+
+                void ReduceBy(Rule rule)
+                {
+                    if (rule.ExtendedInfo.MappedRules != null)
+                    {
+                        foreach (var mappedRule in rule.ExtendedInfo.MappedRules)
+                        {
+                            ReduceBy(mappedRule);
+                        }
+                    }
+                    else
+                    {
+                        var children = new ParseNode[rule.Symbols.Count];
+                        for (var i = rule.Symbols.Count - 1; i >= 0; --i)
+                        {
+                            children[i] = parseStack.Pop();
+                        }
+                        parseStack.Push(new ParseNode(rule.Produced, children, GetStartIndex()));
+                        
+                        int GetStartIndex()
+                        {
+                            if (parseStack.Count == 0) { return 0; }
+                            var previous = parseStack.Peek();
+                            return previous.StartIndex + previous.Width;
+                        }
+                    }
+                }
+            }
         }
     }
 }

@@ -91,26 +91,67 @@ namespace Forelle.Tests.Parsing
                 .ShouldEqual("Exp(Exp(Exp(Term(ID)) + Term(ID)) + Term('(' Exp(Exp(Term(ID)) + Term(ID)) ')'))");
         }
 
-        //[Test]
-        //public void TestPegCastUnaryMinus()
-        //{
-        //    var term = new NonTerminal("Term");
+        [Test]
+        public void TestPegCastUnaryMinus()
+        {
+            var term = new NonTerminal("Term");
 
-        //    var rules = new Rules
-        //    {
-        //        { Exp, term },
-        //        { Exp, term, Minus, Exp },
+            var rules = new Rules
+            {
+                { Exp, term },
+                { Exp, term, Minus, Exp },
 
-        //        { term, Id },
-        //        { term, LeftParen, Exp, RightParen },
-        //        { term, Minus, term },
-        //        { term, LeftParen, Id, RightParen, term }, // cast
-        //    };
+                { term, Id },
+                { term, LeftParen, Exp, RightParen },
+                { term, Minus, term },
+                { term, LeftParen, Id, RightParen, term }, // cast
+            };
 
-        //    var peg = new TestingGraphPegParserInterpreter(rules);
-        //    peg.Parse(new[] { LeftParen, Id, RightParen, Minus, Id }, Exp)
-        //        .ToString()
-        //        .ShouldEqual("E(T('(' E(T(ID)) ')') - E(T(ID)))");
-        //}
+            var peg = new TestingGraphPegParserInterpreter(rules);
+
+            peg.Parse(new[] { LeftParen, Id, RightParen, Minus, Id }, Exp)
+                .ToString()
+                .ShouldEqual("Exp(Term('(' ID ')' Term(- Term(ID))))");
+
+            rules.Remove(rules[Exp, term, Minus, Exp]);
+            rules.Insert(0, new Rule(Exp, term, Minus, Exp));
+            peg = new TestingGraphPegParserInterpreter(rules);
+
+            peg.Parse(new[] { LeftParen, Id, RightParen, Minus, Id }, Exp)
+                .ToString()
+                .ShouldEqual("Exp(Term('(' Exp(Term(ID)) ')') - Exp(Term(ID)))");
+        }
+
+        /// <summary>
+        /// This grammar is interesting for our PEG ambiguity resolution approach because the
+        /// ambiguity occurs deep in the ambiguous parse tree and therefore simply comparing the top
+        /// level rule precedence is not sufficient
+        /// 
+        /// A(+ B(-) B(ID ID) B() + B(-))
+        /// A(+ B(-) B() B(ID ID) + B(-))
+        /// </summary>
+        [Test]
+        public void TestPegDeepAmbiguity()
+        {
+            var rules = new Rules
+            {
+                { A, Plus, B, B, B, Plus, B },
+                { B, Minus },
+                { B, Id, Id },
+                { B }
+            };
+
+            var peg = new TestingGraphPegParserInterpreter(rules);
+            peg.Parse(new[] { Plus, Minus, Id, Id, Plus, Minus }, A)
+                .ToString()
+                .ShouldEqual("A(+ B(-) B(ID ID) B() + B(-))");
+
+            rules.Remove(rules[B, Id, Id]);
+            rules.Add(B, Id, Id);
+            peg = new TestingGraphPegParserInterpreter(rules);
+            peg.Parse(new[] { Plus, Minus, Id, Id, Plus, Minus }, A)
+                .ToString()
+                .ShouldEqual("A(+ B(-) B() B(ID ID) + B(-))");
+        }
     }
 }
