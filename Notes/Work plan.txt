@@ -1,4 +1,9 @@
 * Handle ambiguity in new ParserGenerator (all tests running against new code)
+	* Handle PEG precedence in PEG parser
+	* Integrate PEG parser with ParserGenerator/Interpreter as a solution to when we encounter recursion errors. Also add lifting to single symbol handling
+	* Merge peg branch
+	* Add "static" ambiguity resolution for easy reduce/reduce cases in ParserGenerator and UnresolvedSubContextSwitchActionResolver
+	* Convert multiple null derivation rewriter tests
 * Remove old ParserGenerator and any irrelevant tests, update namespaces
 * Merge new-parser-generator branch
 * CodeGen
@@ -18,5 +23,7 @@
 * Revisit indirect/hidden left recursion
 * Revisit precedence ambiguities
 * Revisit parser state actions (is this the right way to solve it or should we use generic symbols?)
-* LL(LL) lookahead
 * Resolve TODOs
+
+==== POST RELEASE ====
+* LL(*) lookahead?
