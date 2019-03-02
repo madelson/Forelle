@@ -118,6 +118,11 @@ namespace Forelle.Tests
                 { Exp, Exp, Plus, Exp }
             };
 
+            var peg = new TestingGraphPegParserInterpreter(rules);
+            peg.Parse(new[] { Id, Plus, Plus, Plus, Id }, Exp)
+                .ToString()
+                .ShouldEqual("Exp(Exp(Exp(ID) + +) + Exp(ID))");
+
             // todo at least one problem here is that tryspecialize fails on any trailing cursor, but in the case where there's
             // just one specialization this is actually ok!
             var (parser, errors) = ParserGeneratorTest.CreateParser(rules);

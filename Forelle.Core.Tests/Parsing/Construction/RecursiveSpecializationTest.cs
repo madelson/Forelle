@@ -58,8 +58,14 @@ namespace Forelle.Tests.Parsing.Construction
             parser.Parse(new[] { LeftParen, LeftParen, RightParen, RightParen, LeftParen, LeftParen, LeftParen, RightParen, RightParen, RightParen }, A)
                 .ToString()
                 .ShouldEqual("A(B('(' B('(' B() ')') ')') '(' '(' B('(' B() ')') ')' ')')");
+
+            var peg = new TestingGraphPegParserInterpreter(rules);
+
+            peg.Parse(new[] { LeftParen, LeftParen, RightParen, RightParen, LeftParen, LeftParen, LeftParen, RightParen, RightParen, RightParen }, A)
+                .ToString()
+                .ShouldEqual("A(B('(' B('(' B() ')') ')') '(' '(' B('(' B() ')') ')' ')')");
         }
-        
+
         [Test]
         public void TestDifferentiablePrefixGrammar()
         {
@@ -137,6 +143,16 @@ namespace Forelle.Tests.Parsing.Construction
                 .ShouldEqual("Stmt(A('(' A('(' A(ID) ')') ')') +)");
 
             parser.Parse(new[] { LeftParen, Id, RightParen, Minus }, Stmt)
+                .ToString()
+                .ShouldEqual("Stmt(B('(' B(ID) ')') -)");
+
+            var peg = new TestingGraphPegParserInterpreter(rules);
+
+            peg.Parse(new[] { LeftParen, LeftParen, Id, RightParen, RightParen, Plus }, Stmt)
+                .ToString()
+                .ShouldEqual("Stmt(A('(' A('(' A(ID) ')') ')') +)");
+
+            peg.Parse(new[] { LeftParen, Id, RightParen, Minus }, Stmt)
                 .ToString()
                 .ShouldEqual("Stmt(B('(' B(ID) ')') -)");
         }

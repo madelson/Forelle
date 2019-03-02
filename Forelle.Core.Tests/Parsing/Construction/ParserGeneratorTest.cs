@@ -79,6 +79,11 @@ namespace Forelle.Tests.Parsing.Construction
             parser2.Parse(new[] { Id, Id, Times, SemiColon, Plus, SemiColon, Minus }, A)
                 .ToString()
                 .ShouldEqual("A(ID A(ID A(*) B(;) +) B(;) -)");
+
+            var peg = new TestingGraphPegParserInterpreter(rules);
+            peg.Parse(new[] { Id, Id, Times, SemiColon, Plus, SemiColon, Minus }, A)
+                .ToString()
+                .ShouldEqual("A(ID A(ID A(*) B(;) +) B(;) -)");
         }
 
         [Test]
@@ -117,6 +122,18 @@ namespace Forelle.Tests.Parsing.Construction
 
             // [ [ id; ] [ [] id ] ];
             parser2.Parse(new[] { OpenBracket, OpenBracket, Id, SemiColon, CloseBracket, OpenBracket, OpenBracket, CloseBracket, Id, CloseBracket, CloseBracket, SemiColon }, Stmt)
+                .ToString()
+                .ShouldEqual("Stmt(Exp([ List<Exp>(Exp([ Stmt(Exp(ID) ;) List<Stmt>() ]) List<Exp>(Exp([ List<Exp>(Exp([ List<Exp>() ]) List<Exp>(Exp(ID) List<Exp>())) ]) List<Exp>())) ]) ;)");
+
+            var peg = new TestingGraphPegParserInterpreter(rules);
+
+            // [];
+            peg.Parse(new[] { OpenBracket, CloseBracket, SemiColon }, Stmt)
+                .ToString()
+                .ShouldEqual("Stmt(Exp([ List<Exp>() ]) ;)");
+
+            // [ [ id; ] [ [] id ] ];
+            peg.Parse(new[] { OpenBracket, OpenBracket, Id, SemiColon, CloseBracket, OpenBracket, OpenBracket, CloseBracket, Id, CloseBracket, CloseBracket, SemiColon }, Stmt)
                 .ToString()
                 .ShouldEqual("Stmt(Exp([ List<Exp>(Exp([ Stmt(Exp(ID) ;) List<Stmt>() ]) List<Exp>(Exp([ List<Exp>(Exp([ List<Exp>() ]) List<Exp>(Exp(ID) List<Exp>())) ]) List<Exp>())) ]) ;)");
         }

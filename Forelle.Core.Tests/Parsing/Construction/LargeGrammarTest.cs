@@ -100,6 +100,12 @@ namespace Forelle.Tests.Parsing.Construction
             parser2.Parse(tokens, StmtList)
                 .ToString()
                 .ShouldEqual("List<Stmt>(Stmt(Assignment(var Ident(ID) = Exp(NUM) ;)) List<Stmt>(Stmt(Assignment(var Ident(ID) = Exp(Lambda(LambdaArgs(Ident(ID)) => Exp(ExpBlock('(' Stmt(Assignment(var Ident(ID) = Exp(Exp(Ident(ID)) + Exp(Ident(ID))) ;)) List<Stmt>(Stmt(return Exp(Ident(ID)) ;) List<Stmt>()) ')')))) ;)) List<Stmt>(Stmt(Assignment(var Ident(ID) = Exp(Tuple('(' List<TupleMemberBinding>(TupleMemberBinding(Ident(ID) : Exp(Ident(ID))) , List<TupleMemberBinding>(TupleMemberBinding(Ident(ID) : Exp(Ident(ID))))) ')')) ;)) List<Stmt>(Stmt(Exp(Call(Exp(Ident(ID)) '(' List<Arg>(Exp(NUM)) ')')) ;) List<Stmt>()))))");
+
+            var peg = new TestingGraphPegParserInterpreter(rules);
+
+            peg.Parse(tokens, StmtList)
+                .ToString()
+                .ShouldEqual("List<Stmt>(Stmt(Assignment(var Ident(ID) = Exp(NUM) ;)) List<Stmt>(Stmt(Assignment(var Ident(ID) = Exp(Lambda(LambdaArgs(Ident(ID)) => Exp(ExpBlock('(' Stmt(Assignment(var Ident(ID) = Exp(Exp(Ident(ID)) + Exp(Ident(ID))) ;)) List<Stmt>(Stmt(return Exp(Ident(ID)) ;) List<Stmt>()) ')')))) ;)) List<Stmt>(Stmt(Assignment(var Ident(ID) = Exp(Tuple('(' List<TupleMemberBinding>(TupleMemberBinding(Ident(ID) : Exp(Ident(ID))) , List<TupleMemberBinding>(TupleMemberBinding(Ident(ID) : Exp(Ident(ID))))) ')')) ;)) List<Stmt>(Stmt(Exp(Call(Exp(Ident(ID)) '(' List<Arg>(Exp(NUM)) ')')) ;) List<Stmt>()))))");
         }
 
         private static List<Token> Lex(string code, IReadOnlyList<Rule> rules)
