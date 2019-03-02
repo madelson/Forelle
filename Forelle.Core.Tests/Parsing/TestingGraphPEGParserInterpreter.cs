@@ -47,7 +47,7 @@ namespace Forelle.Tests.Parsing
             );
         }
 
-        public Construction.ParseNode Parse(IReadOnlyList<Token> tokens, NonTerminal symbol)
+        public ParseNode Parse(IReadOnlyList<Token> tokens, NonTerminal symbol)
         {
             this.ResetParser(tokens, symbol);
 
@@ -114,6 +114,8 @@ namespace Forelle.Tests.Parsing
 
         private void Push(GraphStructureStackNode node)
         {
+            //Console.WriteLine($"PUSH {node} {node.GetHashCode()}");
+
             if (node.Rule.Symbols.Count == 0)
             {
                 // we've reached the end of a rule => reduce!
@@ -144,6 +146,8 @@ namespace Forelle.Tests.Parsing
 
         private void Reduce(GraphStructureStackNode node, ImmutableLinkedList<InternalParseNode> children)
         {
+            //Console.WriteLine($"REDUCE {node} {node.GetHashCode()} (children = {string.Join(", ", children)})");
+
             if (node.Rule.Start > 0)
             {
                 // this state means that we're walking backwards within the same rule, e. g. from
@@ -198,13 +202,19 @@ namespace Forelle.Tests.Parsing
                 if (parent.LastReduction.Width == parseNode.Width)
                 {
                     var comparison = this.ComparePegPrecedence(parseNode, parent.LastReduction);
-                    Console.WriteLine($"Ambiguity @{this._index}: {parseNode} vs. {parent.LastReduction} (CHOOSING #{(comparison < 0 ? 1 : 2)})");
-                    if (comparison < 0)
+                    // it might seem like we should never get equal nodes here (because that would indicate duplicate work). However, this
+                    // can actually happen when one of the nodes was overwritten as a result of a previous resolution. For example, in the case
+                    // where we reduce A -> C(ID) back to 2 different parent nodes and then we also reduce A -> B(ID) back to those 2 nodes, then
+                    // the first reduction of A -> B(ID) will overwrite the parse tree and on the second reduction we'll have A -> B(ID) vs. A -> B(ID)
+                    if (comparison != 0)
                     {
-                        // if the new parse is higher precedence, overwrite the original parse
-                        parent.LastReduction.SetParse(parseNode.Rule, parseNode.Children);
+                        Console.WriteLine($"Ambiguity @{this._index}: {parseNode} {parseNode.GetHashCode()} vs. {parent.LastReduction} {parent.LastReduction.GetHashCode()} (CHOOSING #{(comparison < 0 ? 1 : 2)})");
+                        if (comparison < 0)
+                        {
+                            // if the new parse is higher precedence, overwrite the original parse
+                            parent.LastReduction.SetParse(parseNode.Rule, parseNode.Children);
+                        }
                     }
-                    Invariant.Require(comparison != 0);
 
                     return false;
                 }
@@ -325,7 +335,7 @@ namespace Forelle.Tests.Parsing
             public ImmutableLinkedList<InternalParseNode> Children { get; private set; }
             public int Width { get; }
             public int StartIndex { get; }
-
+            
             /// <summary>
             /// Overwrites the parse tree for this node
             /// </summary>
@@ -384,7 +394,7 @@ namespace Forelle.Tests.Parsing
                         
                         int GetStartIndex()
                         {
-                            if (parseStack.Count == 0) { return 0; }
+                            if (parseStack.Count == 0) { return this.StartIndex; }
                             var previous = parseStack.Peek();
                             return previous.StartIndex + previous.Width;
                         }

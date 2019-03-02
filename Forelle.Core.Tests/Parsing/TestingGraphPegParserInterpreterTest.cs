@@ -92,6 +92,40 @@ namespace Forelle.Tests.Parsing
         }
 
         [Test]
+        public void TestPegArithmetic()
+        {
+            var rules = new Rules
+            {
+                { Exp, Id },
+                { Exp, Minus, Exp },
+                { Exp, Exp, PlusOrMinus, Exp },
+                { Exp, Exp, TimesOrDivide, Exp },
+                { PlusOrMinus, Plus },
+                { PlusOrMinus, Minus },
+                { TimesOrDivide, Times },
+                { TimesOrDivide, Divide },
+            };
+
+            var peg = new TestingGraphPegParserInterpreter(rules);
+
+            peg.Parse(new[] { Id, Plus, Id, Times, Id }, Exp)
+                .ToString()
+                .ShouldEqual("Exp(Exp(ID) +|-(+) Exp(Exp(ID) *|/(*) Exp(ID)))");
+
+            peg.Parse(new[] { Id, Times, Id, Plus, Id }, Exp)
+                .ToString()
+                .ShouldEqual("Exp(Exp(Exp(ID) *|/(*) Exp(ID)) +|-(+) Exp(ID))");
+
+            peg.Parse(new[] { Id, Times, Id, Minus, Id, Divide, Id }, Exp)
+                .ToString()
+                .ShouldEqual("Exp(Exp(Exp(ID) *|/(*) Exp(ID)) +|-(-) Exp(Exp(ID) *|/(/) Exp(ID)))");
+
+            peg.Parse(new[] { Id, Times, Id, Minus, Id, Divide, Id, Plus, Id }, Exp)
+                .ToString()
+                .ShouldEqual("Exp(Exp(Exp(Exp(ID) *|/(*) Exp(ID)) +|-(-) Exp(Exp(ID) *|/(/) Exp(ID))) +|-(+) Exp(ID))");
+        }
+
+        [Test]
         public void TestPegCastUnaryMinus()
         {
             var term = new NonTerminal("Term");
