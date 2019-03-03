@@ -93,3 +93,6 @@ IDEAS 2/28/2019
 	
 IDEAS 2/29/2019
 - Roslyn error handling has some special cases where it can both skip and insert for similar tokens. E. g. if it sees "}" when it expected ")" it skips "}" and inserts ")" in one go
+
+IDEAS 3/2/2019
+- For standalone GPEG, an open question is how to get the "longest match" behavior for tokens without the ugly hack of having to do ~identifierPart after each keyword. What if, upon encountering a token, we switch to a "longest match" mode whereby noone is allowed to reduce into anything that is NOT a token unless they are the sole remaining head?
