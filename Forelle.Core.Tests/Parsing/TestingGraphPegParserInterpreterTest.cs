@@ -126,6 +126,32 @@ namespace Forelle.Tests.Parsing
         }
 
         [Test]
+        public void TestPegAssociativity()
+        {
+            var rules = new Rules
+            {
+                { Exp, Exp, Plus, Exp },
+                { Exp, Id },
+                { Exp, Exp, QuestionMark, Exp, Colon, Exp },
+            };
+
+            var peg = new TestingGraphPegParserInterpreter(rules);
+
+            peg.Parse(new[] { Id, Plus, Id, Plus, Id, Plus, Id }, Exp)
+                .ToString()
+                .ShouldEqual("Exp(Exp(Exp(Exp(ID) + Exp(ID)) + Exp(ID)) + Exp(ID))");
+
+            peg.Parse(new[] { Id, QuestionMark, Id, Colon, Id, QuestionMark, Id, Colon, Id }, Exp)
+                .ToString()
+                .ShouldEqual("Exp(Exp(ID) ? Exp(ID) : Exp(Exp(ID) ? Exp(ID) : Exp(ID)))");
+
+            // this doesn't behave as we'd want, as here right associative rules are given highest precedence
+            peg.Parse(new[] { Id, QuestionMark, Id, Colon, Id, Plus, Id }, Exp)
+                .ToString()
+                .ShouldEqual("Exp(Exp(Exp(ID) ? Exp(ID) : Exp(ID)) + Exp(ID))");
+        }
+
+        [Test]
         public void TestPegCastUnaryMinus()
         {
             var term = new NonTerminal("Term");
