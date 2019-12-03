@@ -1,0 +1,34 @@
+HEREDOC
+
+/<<-(?<tag>\w+)/ { PUSH('HEREDOC_TAG', tag) }
+NL
+body: .*?
+NL
+/$tag/
+
+* Note that back-references don't work in DFA regex; but you can use a DFA to check for a possible match and then come back with a slower matcher: https://www.oreilly.com/library/view/mastering-regular-expressions/0596528124/ch04.html
+
+C# #if
+
+CompilerConstantExpression = CompilerConstantName
+	| NegatedCompilerConstantExpression
+	| AndCompilerConstantExpression
+	| OrCompilerConstantExpression
+	| GroupCompilerConstantExpression
+* each of these sets the current value
+
+trivia Directive = 
+	"#if" CompilerConstantExpression { REQUIRE(GET('CompilerConstant')); PUSH('CompilerConstant_expectElse') }
+	| "#if" CompilerConstantExpression { REQUIRE(!GET('CompilerConstant')); } NL body: .*? ...
+	
+C# interpolated strings
+
+token InterpolatedString = $"\"" (Part | Hole)+ "\""
+
+Part = /[^\r\n{}]+|{{|}}/
+
+Hole = "{" Expression Format "}"
+
+XML tags
+
+Tag = /<(?=\S)/ name attributes ">" Content /<$name\s*/>/ 

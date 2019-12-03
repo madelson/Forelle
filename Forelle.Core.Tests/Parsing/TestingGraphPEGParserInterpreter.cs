@@ -140,6 +140,8 @@ namespace Forelle.Tests.Parsing
             }
             else if (node.Rule.Symbols[0] == this.Peek())
             {
+                // note: the times when this ends up merging are when we are expanding a rule where
+                // multiple expansions have the same first symbol
                 AddOrMerge(node, this._newHeads);
             }
         }
