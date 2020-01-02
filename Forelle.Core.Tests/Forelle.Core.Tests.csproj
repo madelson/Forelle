@@ -84,6 +84,7 @@
     <Compile Include="Parsing\Construction\TestingParser.cs" />
     <Compile Include="Parsing\TestingGraphPegParserInterpreter.cs" />
     <Compile Include="Parsing\TestingGraphPegParserInterpreterTest.cs" />
+    <Compile Include="Parsing\TestingLRParserInterpreter.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="RuleTest.cs" />
     <Compile Include="SymbolTest.cs" />
