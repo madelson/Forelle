@@ -37,7 +37,7 @@ namespace Forelle.Parsing.Preprocessing.LR
             var hash = 17;
             foreach (var token in this.Tokens)
             {
-                hash = (hash, token).GetHashCode();
+                hash ^= token.GetHashCode();
             }
             return hash;
         }

@@ -6,6 +6,8 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Forelle.Parsing;
+using Forelle.Parsing.Preprocessing;
+using NUnit.Framework;
 
 namespace Forelle.Tests.Parsing
 {
@@ -15,9 +17,43 @@ namespace Forelle.Tests.Parsing
         private readonly Stack<LRClosure> _stateStack = new Stack<LRClosure>();
         private readonly Stack<ParseNode> _nodeStack = new Stack<ParseNode>();
 
+        public TestingLRParserInterpreter(IReadOnlyList<Rule> rules)
+            : this(CreateParsingTable(rules))
+        {
+        }
+
         public TestingLRParserInterpreter(Dictionary<LRClosure, Dictionary<Symbol, LRAction>> parsingTable)
         {
+            if (parsingTable.SelectMany(kvp => kvp.Value.Values).OfType<LRConflictAction>().Any())
+            {
+                throw new ArgumentException("conflict found", nameof(parsingTable));
+            }
+
             this._parsingTable = parsingTable;
+        }
+
+        private static Dictionary<LRClosure, Dictionary<Symbol, LRAction>> CreateParsingTable(IReadOnlyList<Rule> rules)
+        {
+            var preprocessed = PreprocessGrammar(rules);
+
+            return LRGenerator.Generate(preprocessed.ToLookup(r => r.Produced), FirstFollowCalculator.Create(preprocessed));
+        }
+
+        private static List<Rule> PreprocessGrammar(IReadOnlyList<Rule> rules)
+        {
+            if (!GrammarValidator.Validate(rules, out var validationErrors))
+            {
+                throw new ArgumentException("Invalid grammar: " + string.Join(Environment.NewLine, validationErrors));
+            }
+
+            var (withoutMultipleNullDerivations, multipleNullDerivationErrors) = MultipleNullDerivationRewriter.Rewrite(rules, Array.Empty<AmbiguityResolution>());
+            Assert.IsEmpty(multipleNullDerivationErrors);
+            var withoutAliases = AliasHelper.InlineAliases(withoutMultipleNullDerivations, AliasHelper.FindAliases(withoutMultipleNullDerivations));
+            var withoutLeftRecursion = LeftRecursionRewriter.Rewrite(withoutAliases);
+
+            var withStartSymbols = StartSymbolAdder.AddStartSymbols(withoutLeftRecursion);
+
+            return withStartSymbols;
         }
 
         public ParseNode Parse(IReadOnlyList<Token> tokens, NonTerminal symbol)
@@ -26,11 +62,12 @@ namespace Forelle.Tests.Parsing
             this._nodeStack.Clear();
 
             var startState = this._parsingTable.Keys.Single(
-                c => c.Keys.Any(r => r.Start == 0 && r.Produced.SyntheticInfo is StartSymbolInfo startSymbolInfo && startSymbolInfo.Symbol == symbol)
+                c => c.Keys.Any(r => r.Node.GetCursorLeafIndex() == 0 && r.Node.Symbol.SyntheticInfo is StartSymbolInfo startSymbolInfo && startSymbolInfo.Symbol == symbol)
             );
             this._stateStack.Push(startState);
 
-            tokens = tokens.Concat(startState.Keys.SelectMany(r => r.Symbols).OfType<Token>().Where(t => t.SyntheticInfo is EndSymbolTokenInfo))
+            var endToken = startState.Keys.SelectMany(r => r.Node.GetLeaves()).Select(l => l.Symbol).OfType<Token>().Where(t => t.SyntheticInfo is EndSymbolTokenInfo);
+            tokens = tokens.Concat(endToken)
                 .ToArray();
 
             var index = 0;
@@ -67,8 +104,8 @@ namespace Forelle.Tests.Parsing
             // the start symbol parse node anyway.
 
             Invariant.Require(this._nodeStack.Count == 2);
-            var endToken = this._nodeStack.Pop();
-            Invariant.Require(endToken.Symbol == tokens[tokens.Count - 1]);
+            var lastToken = this._nodeStack.Pop();
+            Invariant.Require(lastToken.Symbol == tokens[tokens.Count - 1]);
             return this._nodeStack.Pop();
         }
     }

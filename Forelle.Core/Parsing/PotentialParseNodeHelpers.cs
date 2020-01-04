@@ -10,8 +10,6 @@ namespace Forelle.Parsing
     {
         public static bool HasTrailingCursor(this PotentialParseNode node)
         {
-            if (node == null) { throw new ArgumentNullException(nameof(node)); }
-
             return node is PotentialParseParentNode parent
                 ? node.CursorPosition == parent.Children.Count
                 : node.CursorPosition == 1;
@@ -107,20 +105,15 @@ namespace Forelle.Parsing
 
             return result;
         }
-        
-        public static PotentialParseLeafNode GetLeafAtCursorPosition(this PotentialParseNode node)
-        {
-            switch (node)
-            {
-                case PotentialParseParentNode parent: return parent.Children[node.CursorPosition.Value].GetLeafAtCursorPosition();
-                case PotentialParseLeafNode leaf: return node.CursorPosition == 0 ? leaf : throw new InvalidOperationException("trailing cursor");
-                default: throw new InvalidOperationException("Unexpected node type");
-            }
-        }
+
+        public static PotentialParseLeafNode GetLeafAtCursorPosition(this PotentialParseNode node) =>
+            node is PotentialParseParentNode parent ? parent.Children[node.CursorPosition.Value].GetLeafAtCursorPosition()
+                : node.CursorPosition == 0 ? (PotentialParseLeafNode)node
+                : throw new InvalidOperationException("trailing cursor");
 
         public static IEnumerable<PotentialParseLeafNode> GetLeaves(this PotentialParseNode node)
         {
-            if (node == null) { throw new ArgumentNullException(nameof(node)); }
+            Invariant.Require(node != null);
 
             return Traverse.DepthFirst(node, n => n is PotentialParseParentNode parent ? parent.Children : Enumerable.Empty<PotentialParseNode>())
                 .OfType<PotentialParseLeafNode>();
@@ -128,9 +121,70 @@ namespace Forelle.Parsing
 
         public static int CountNodes(this PotentialParseNode node)
         {
-            if (node == null) { throw new ArgumentNullException(nameof(node)); }
+            Invariant.Require(node != null);
 
             return (node is PotentialParseParentNode parent ? parent.Children.Sum(CountNodes) : 0) + 1;
+        }
+
+        public static TNode AdvanceCursor<TNode>(this TNode node)
+            where TNode : PotentialParseNode
+        {
+            Invariant.Require(node.CursorPosition.HasValue && !node.HasTrailingCursor());
+
+            return (TNode)AdvanceOrRemove(node, hasFurtherSiblings: false);
+
+            PotentialParseNode AdvanceOrRemove(PotentialParseNode current, bool hasFurtherSiblings)
+            {
+                if (current is PotentialParseParentNode parent)
+                {
+                    var cursorPosition = parent.CursorPosition.Value;
+                    var childWithCursor = parent.Children[cursorPosition];
+
+                    // advance or remove the cursor in the child that currently has it
+                    var advancedChild = AdvanceOrRemove(childWithCursor, hasFurtherSiblings: hasFurtherSiblings || cursorPosition < parent.Children.Count - 1);
+
+                    // if the child no longer has the cursor, see if we can place it on a sibling
+                    if (!advancedChild.CursorPosition.HasValue)
+                    {
+                        for (var i = cursorPosition + 1; i < parent.Children.Count; ++i)
+                        {
+                            var child = parent.Children[i];
+                            PotentialParseNode newChildWithCursor;
+                            if (child.LeafCount > 0)
+                            {
+                                // found a sibling with leaves
+                                newChildWithCursor = child.WithCursor(0);
+                            }
+                            else if (!hasFurtherSiblings && i == parent.Children.Count - 1)
+                            {
+                                // no further siblings are coming from parents of this, so take the last sibling with a trailing cursor
+                                newChildWithCursor = child.WithTrailingCursor();
+                            }
+                            else
+                            {
+                                // neither: just keep going
+                                continue;
+                            }
+
+                            // replace both the original child and the new cursor-marked child
+                            return new PotentialParseParentNode(
+                                parent.Rule,
+                                parent.Children.Select(ch => ch == childWithCursor ? advancedChild : ch == child ? newChildWithCursor : ch)
+                            );
+                        }
+                    }
+
+                    // if we get here, then either the cursor is still on the same child OR it will be placed
+                    // on an outer sibling. Just replace the original cursor child with the advanced version
+                    return new PotentialParseParentNode(
+                        parent.Rule,
+                        parent.Children.Select(ch => ch == childWithCursor ? advancedChild : ch)
+                    );
+                }
+
+                // if this is the last node, move the cursor to be trailing. Otherwise just remove it
+                return hasFurtherSiblings ? current.WithoutCursor() : current.WithTrailingCursor();
+            }
         }
     }
 }

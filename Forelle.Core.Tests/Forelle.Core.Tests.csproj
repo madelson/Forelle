@@ -65,6 +65,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="ExpectedFailureTests.cs" />
+    <Compile Include="JSMachinesConverter.cs" />
     <Compile Include="Parsing\Construction\AmbiguousGrammarParserGeneratorTest.cs" />
     <Compile Include="Parsing\Construction\DiscriminatorHelperTest.cs" />
     <Compile Include="Parsing\Construction\ImmutableTrieTest.cs" />
@@ -73,7 +74,9 @@
     <Compile Include="Parsing\Construction\ParserInterpeter.cs" />
     <Compile Include="Parsing\Construction\ParserPrinter.cs" />
     <Compile Include="Parsing\Construction\RecursiveSpecializationTest.cs" />
+    <Compile Include="Parsing\Preprocessing\LRGeneratorTest.cs" />
     <Compile Include="Parsing\PotentialParseNodeParser.cs" />
+    <Compile Include="Parsing\PotentialParseNodeTest.cs" />
     <Compile Include="Parsing\Preprocessing\AliasHelperTest.cs" />
     <Compile Include="Parsing\FirstFollowCalculatorTest.cs" />
     <Compile Include="Parsing\Preprocessing\GrammarValidatorTest.cs" />

@@ -7,28 +7,34 @@ using System.Text;
 
 namespace Forelle.Parsing.Preprocessing.LR
 {
-    internal sealed class LRClosure : IEquatable<LRClosure>, IReadOnlyDictionary<RuleRemainder, LRLookahead>
+    internal sealed class LRClosure : IEquatable<LRClosure>, IReadOnlyDictionary<LRRule, LRLookahead>
     {
-        private static readonly IEqualityComparer<IReadOnlyDictionary<RuleRemainder, LRLookahead>> DictionaryComparer =
-            EqualityComparers.GetCollectionComparer<KeyValuePair<RuleRemainder, LRLookahead>>();
+        private static readonly IEqualityComparer<IReadOnlyDictionary<LRRule, LRLookahead>> DictionaryComparer =
+            EqualityComparers.GetCollectionComparer(
+                // since KVP doesn't implement GetHashCode() in a useful way
+                EqualityComparers.Create((KeyValuePair<LRRule, LRLookahead> kvp) => (kvp.Key, kvp.Value))
+            );
+
         private const int DefaultCachedHashCode = -17;
 
-        private readonly Dictionary<RuleRemainder, LRLookahead> _items;
+        private readonly Dictionary<LRRule, LRLookahead> _items;
         private int _cachedHashCode = DefaultCachedHashCode;
 
-        public LRClosure(Dictionary<RuleRemainder, LRLookahead> items)
+        public LRClosure(Dictionary<LRRule, LRLookahead> items)
         {
             Invariant.Require(items.Count != 0);
             this._items = items;
         }
 
-        public IEnumerable<RuleRemainder> Keys => this._items.Keys;
+        private string DebugView => this.ToString();
+
+        public IEnumerable<LRRule> Keys => this._items.Keys;
 
         public IEnumerable<LRLookahead> Values => this._items.Values;
 
         public int Count => this._items.Count;
 
-        public LRLookahead this[RuleRemainder key] => this._items[key];
+        public LRLookahead this[LRRule key] => this._items[key];
 
         public bool Equals(LRClosure other) => DictionaryComparer.Equals(this._items, other._items);
 
@@ -49,13 +55,13 @@ namespace Forelle.Parsing.Preprocessing.LR
                 .OrderBy(s => s)
         );
 
-        public bool ContainsKey(RuleRemainder key) => this._items.ContainsKey(key);
+        public bool ContainsKey(LRRule key) => this._items.ContainsKey(key);
 
-        public bool TryGetValue(RuleRemainder key, out LRLookahead value) => this._items.TryGetValue(key, out value);
+        public bool TryGetValue(LRRule key, out LRLookahead value) => this._items.TryGetValue(key, out value);
 
-        public Dictionary<RuleRemainder, LRLookahead>.Enumerator GetEnumerator() => this._items.GetEnumerator();
+        public Dictionary<LRRule, LRLookahead>.Enumerator GetEnumerator() => this._items.GetEnumerator();
 
-        IEnumerator<KeyValuePair<RuleRemainder, LRLookahead>> IEnumerable<KeyValuePair<RuleRemainder, LRLookahead>>.GetEnumerator() => this.GetEnumerator();
+        IEnumerator<KeyValuePair<LRRule, LRLookahead>> IEnumerable<KeyValuePair<LRRule, LRLookahead>>.GetEnumerator() => this.GetEnumerator();
 
         IEnumerator IEnumerable.GetEnumerator() => this.GetEnumerator();
     }

@@ -15,6 +15,8 @@ namespace Forelle.Parsing.Preprocessing.LR
     {
         private readonly ILookup<NonTerminal, Rule> _rulesByProduced;
         private readonly IFirstFollowProvider _firstFollow;
+        // todo if we start doing caching of default nodes for symbol/rule we can remove this
+        private readonly IReadOnlyDictionary<Rule, PotentialParseParentNode> _defaultRuleNodes;
 
         private readonly Dictionary<LRClosure, Dictionary<Symbol, LRAction>> _parsingTable = new Dictionary<LRClosure, Dictionary<Symbol, LRAction>>();
 
@@ -22,6 +24,9 @@ namespace Forelle.Parsing.Preprocessing.LR
         {
             this._rulesByProduced = rulesByProduced;
             this._firstFollow = firstFollow;
+
+            this._defaultRuleNodes = rulesByProduced.SelectMany(g => g)
+                .ToDictionary(r => r, r => (PotentialParseParentNode)PotentialParseNode.Create(r).WithCursor(0));
         }
 
         public static Dictionary<LRClosure, Dictionary<Symbol, LRAction>> Generate(ILookup<NonTerminal, Rule> rulesByProduced, IFirstFollowProvider firstFollow) =>
@@ -40,7 +45,7 @@ namespace Forelle.Parsing.Preprocessing.LR
                     .Select(t => this.Closure(new[]
                     {
                         (
-                            rule: this._rulesByProduced[t.symbol].Single().Skip(0),
+                            rule: new LRRule(this._defaultRuleNodes[this._rulesByProduced[t.symbol].Single()]),
                             lookahead: new LRLookahead(ImmutableHashSet<Token>.Empty)
                         )
                     }))
@@ -77,24 +82,24 @@ namespace Forelle.Parsing.Preprocessing.LR
         }
 
         private Dictionary<Symbol, LRClosure> Gotos(LRClosure closure) =>
-            closure.Where(kvp => kvp.Key.Symbols.Count != 0)
-                .GroupBy(kvp => kvp.Key.Symbols[0], kvp => (rule: kvp.Key.Skip(1), lookahead: kvp.Value))
+            closure.Where(kvp => !kvp.Key.Node.HasTrailingCursor())
+                .GroupBy(kvp => kvp.Key.Node.GetLeafAtCursorPosition().Symbol, kvp => (rule: new LRRule(kvp.Key.Node.AdvanceCursor()), lookahead: kvp.Value))
                 .ToDictionary(g => g.Key, this.Closure);
 
         private IEnumerable<(Token token, LRReduceAction reduction)> Reductions(LRClosure closure) =>
-            closure.Where(kvp => kvp.Key.Symbols.Count == 0)
-                .SelectMany(kvp => kvp.Value.Tokens, (kvp, token) => (token, new LRReduceAction(kvp.Key.Rule)));
+            closure.Where(kvp => kvp.Key.Node.HasTrailingCursor())
+                .SelectMany(kvp => kvp.Value.Tokens, (kvp, token) => (token, new LRReduceAction(kvp.Key.Node.Rule)));
 
-        private LRClosure Closure(IEnumerable<(RuleRemainder rule, LRLookahead lookahead)> kernelItems)
+        private LRClosure Closure(IEnumerable<(LRRule rule, LRLookahead lookahead)> kernelItems)
         {
-            var closureBuilder = new Dictionary<RuleRemainder, LRLookahead>();
+            var closureBuilder = new Dictionary<LRRule, LRLookahead>();
             foreach (var item in kernelItems)
             {
                 AddRule(item.rule, item.lookahead);
             }
             return new LRClosure(closureBuilder);
             
-            void AddRule(RuleRemainder rule, LRLookahead lookahead)
+            void AddRule(LRRule rule, LRLookahead lookahead)
             {
                 bool changed;
                 if (closureBuilder.TryGetValue(rule, out var existingLookahead))
@@ -116,9 +121,11 @@ namespace Forelle.Parsing.Preprocessing.LR
                     changed = true;
                 }
 
-                if (changed && rule.Symbols.Count != 0 && rule.Symbols[0] is NonTerminal nonTerminal)
+                if (changed 
+                    && !rule.Node.HasTrailingCursor() 
+                    && rule.Node.GetLeafAtCursorPosition().Symbol is NonTerminal nonTerminal)
                 {
-                    var remainderLookahead = this._firstFollow.FirstOf(rule.Skip(1).Symbols);
+                    var remainderLookahead = this._firstFollow.FirstOf(GetLeavesFromCursor(rule.Node).Skip(1).Select(n => n.Symbol));
                     if (remainderLookahead.Contains(null))
                     {
                         remainderLookahead = remainderLookahead.Remove(null).Union(lookahead.Tokens);
@@ -126,10 +133,27 @@ namespace Forelle.Parsing.Preprocessing.LR
 
                     foreach (var nonTerminalRule in this._rulesByProduced[nonTerminal])
                     {
-                        AddRule(nonTerminalRule.Skip(0), new LRLookahead(remainderLookahead));
+                        AddRule(new LRRule(this._defaultRuleNodes[nonTerminalRule]), new LRLookahead(remainderLookahead));
                     }
                 }
             }
         }
+
+        private static IEnumerable<PotentialParseLeafNode> GetLeavesFromCursor(PotentialParseNode node) =>
+            node.HasTrailingCursor()
+                ? Enumerable.Empty<PotentialParseLeafNode>()
+                : Traverse.DepthFirst(
+                        (node, sawCursor: false),
+                        t => t switch {
+                            (node: PotentialParseParentNode parent, sawCursor: false) =>
+                                parent.Children.SkipWhile(ch => !ch.CursorPosition.HasValue)
+                                    .Select((ch, index) => (node: ch, sawCursor: index > 0)),
+                            (node: PotentialParseParentNode parent, sawCursor: true) =>
+                                parent.Children.Select(ch => (node: ch, sawCursor: true)),
+                            _ => Enumerable.Empty<(PotentialParseNode node, bool sawCursor)>()
+                        }
+                    )
+                    .Select(t => t.node)
+                    .OfType<PotentialParseLeafNode>();
     }
 }
