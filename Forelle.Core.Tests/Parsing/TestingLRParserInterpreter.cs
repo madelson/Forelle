@@ -84,13 +84,8 @@ namespace Forelle.Tests.Parsing
                         ++index;
                         break;
                     case LRReduceAction reduce:
-                        var children = new ParseNode[reduce.Rule.Symbols.Count];
-                        for (var i = children.Length - 1; i >= 0; --i)
-                        {
-                            children[i] = this._nodeStack.Pop();
-                            this._stateStack.Pop();
-                        };
-                        this._nodeStack.Push(new ParseNode(reduce.Rule.Produced, children, children.Length != 0 ? children[0].StartIndex : index));
+                        TestingGraphPegParserInterpreter.ReduceBy(reduce.Rule, this._nodeStack, baseIndex: 0);
+                        for (var i = 0; i < reduce.Rule.Symbols.Count; ++i) { this._stateStack.Pop(); }
                         var gotoAction = (LRGotoAction)this._parsingTable[this._stateStack.Peek()][reduce.Rule.Produced];
                         this._stateStack.Push(gotoAction.Goto);
                         break;

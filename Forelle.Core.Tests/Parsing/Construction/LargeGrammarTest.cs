@@ -107,12 +107,7 @@ namespace Forelle.Tests.Parsing.Construction
                 .ToString()
                 .ShouldEqual("List<Stmt>(Stmt(Assignment(var Ident(ID) = Exp(NUM) ;)) List<Stmt>(Stmt(Assignment(var Ident(ID) = Exp(Lambda(LambdaArgs(Ident(ID)) => Exp(ExpBlock('(' Stmt(Assignment(var Ident(ID) = Exp(Exp(Ident(ID)) + Exp(Ident(ID))) ;)) List<Stmt>(Stmt(return Exp(Ident(ID)) ;) List<Stmt>()) ')')))) ;)) List<Stmt>(Stmt(Assignment(var Ident(ID) = Exp(Tuple('(' List<TupleMemberBinding>(TupleMemberBinding(Ident(ID) : Exp(Ident(ID))) , List<TupleMemberBinding>(TupleMemberBinding(Ident(ID) : Exp(Ident(ID))))) ')')) ;)) List<Stmt>(Stmt(Exp(Call(Exp(Ident(ID)) '(' List<Arg>(Exp(NUM)) ')')) ;) List<Stmt>()))))");
 
-            var lrRules = Forelle.Parsing.Preprocessing.StartSymbolAdder.AddStartSymbols(rules);
-            var lrParseTable = Forelle.Parsing.Preprocessing.LR.LRGenerator.Generate(
-                lrRules.ToLookup(r => r.Produced), 
-                Forelle.Parsing.FirstFollowCalculator.Create(lrRules)
-            );
-            new TestingLRParserInterpreter(lrParseTable).Parse(tokens, StmtList)
+            new TestingLRParserInterpreter(rules).Parse(tokens, StmtList)
                 .ToString()
                 .ShouldEqual("List<Stmt>(Stmt(Assignment(var Ident(ID) = Exp(NUM) ;)) List<Stmt>(Stmt(Assignment(var Ident(ID) = Exp(Lambda(LambdaArgs(Ident(ID)) => Exp(ExpBlock('(' Stmt(Assignment(var Ident(ID) = Exp(Exp(Ident(ID)) + Exp(Ident(ID))) ;)) List<Stmt>(Stmt(return Exp(Ident(ID)) ;) List<Stmt>()) ')')))) ;)) List<Stmt>(Stmt(Assignment(var Ident(ID) = Exp(Tuple('(' List<TupleMemberBinding>(TupleMemberBinding(Ident(ID) : Exp(Ident(ID))) , List<TupleMemberBinding>(TupleMemberBinding(Ident(ID) : Exp(Ident(ID))))) ')')) ;)) List<Stmt>(Stmt(Exp(Call(Exp(Ident(ID)) '(' List<Arg>(Exp(NUM)) ')')) ;) List<Stmt>()))))");
         }

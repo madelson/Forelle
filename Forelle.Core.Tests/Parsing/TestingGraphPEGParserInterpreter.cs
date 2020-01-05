@@ -372,35 +372,35 @@ namespace Forelle.Tests.Parsing
                         {
                             Parse(child);
                         }
-                        ReduceBy(internalNode.Rule);
+                        ReduceBy(internalNode.Rule, parseStack, this.StartIndex);
                     }
                 }
+            }
+        }
 
-                void ReduceBy(Rule rule)
+        internal static void ReduceBy(Rule rule, Stack<ParseNode> parseStack, int baseIndex)
+        {
+            if (rule.ExtendedInfo.MappedRules != null)
+            {
+                foreach (var mappedRule in rule.ExtendedInfo.MappedRules)
                 {
-                    if (rule.ExtendedInfo.MappedRules != null)
-                    {
-                        foreach (var mappedRule in rule.ExtendedInfo.MappedRules)
-                        {
-                            ReduceBy(mappedRule);
-                        }
-                    }
-                    else
-                    {
-                        var children = new ParseNode[rule.Symbols.Count];
-                        for (var i = rule.Symbols.Count - 1; i >= 0; --i)
-                        {
-                            children[i] = parseStack.Pop();
-                        }
-                        parseStack.Push(new ParseNode(rule.Produced, children, GetStartIndex()));
-                        
-                        int GetStartIndex()
-                        {
-                            if (parseStack.Count == 0) { return this.StartIndex; }
-                            var previous = parseStack.Peek();
-                            return previous.StartIndex + previous.Width;
-                        }
-                    }
+                    ReduceBy(mappedRule, parseStack, baseIndex);
+                }
+            }
+            else
+            {
+                var children = new ParseNode[rule.Symbols.Count];
+                for (var i = rule.Symbols.Count - 1; i >= 0; --i)
+                {
+                    children[i] = parseStack.Pop();
+                }
+                parseStack.Push(new ParseNode(rule.Produced, children, GetStartIndex()));
+
+                int GetStartIndex()
+                {
+                    if (parseStack.Count == 0) { return baseIndex; }
+                    var previous = parseStack.Peek();
+                    return previous.StartIndex + previous.Width;
                 }
             }
         }
