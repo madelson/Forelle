@@ -142,7 +142,7 @@ namespace Forelle.Parsing.Construction.New2
             if (nodesToNextLeaves.Values.Select(n => n.Symbol).Distinct().Count() == 1)
             {
                 var singleSymbol = nodesToNextLeaves.Values.First().Symbol;
-                var nextContext = this.CreateContext(nodes.Select(n => AdvanceCursor(n, 1)));
+                var nextContext = this.CreateContext(nodes.Select(n => n.AdvanceCursor()));
                 if (singleSymbol is Token token)
                 {
                     var nextContextResult = this.TrySolve(nextContext);
@@ -347,64 +347,6 @@ namespace Forelle.Parsing.Construction.New2
             return new PotentialParseParentNode(rule, rule.Symbols.Select(s => new PotentialParseLeafNode(s)));
         }
         
-        private static PotentialParseParentNode AdvanceCursor(PotentialParseParentNode node, int leafCount)
-        {
-            Invariant.Require(leafCount > 0);
-
-            var oldCursorLeafIndex = node.GetCursorLeafIndex();
-            var newCursorLeafIndex = oldCursorLeafIndex + leafCount;
-            Invariant.Require(newCursorLeafIndex <= node.LeafCount);
-
-            var updated = Update(node, baseLeafIndex: 0);
-            if (newCursorLeafIndex == node.LeafCount)
-            {
-                updated = updated.WithTrailingCursor();
-            }
-            return (PotentialParseParentNode)updated;
-
-            PotentialParseNode Update(PotentialParseNode toUpdate, int baseLeafIndex)
-            {
-                // check if this node could possibly overlap one of the indices of interest
-                var maxLeafIndexExclusive = baseLeafIndex + toUpdate.LeafCount;
-                if (!(baseLeafIndex <= oldCursorLeafIndex && oldCursorLeafIndex < maxLeafIndexExclusive)
-                    && !(baseLeafIndex <= newCursorLeafIndex && newCursorLeafIndex < maxLeafIndexExclusive))
-                {
-                    return toUpdate;
-                }
-
-                if (toUpdate is PotentialParseParentNode parent)
-                {
-                    var childBaseLeafIndex = baseLeafIndex;
-                    PotentialParseNode[] newChildren = null;
-                    for (var i = 0; i < parent.Children.Count; ++i)
-                    {
-                        var child = parent.Children[i];
-                        var updatedChild = Update(child, childBaseLeafIndex);
-                        if (updatedChild != child && newChildren == null)
-                        {
-                            newChildren = new PotentialParseNode[parent.Children.Count];
-                            for (var j = 0; j < i; ++j)
-                            {
-                                newChildren[j] = parent.Children[j];
-                            }
-                        }
-                        if (newChildren != null)
-                        {
-                            newChildren[i] = updatedChild;
-                        }
-
-                        childBaseLeafIndex += child.LeafCount;
-                    }
-
-                    return newChildren != null ? new PotentialParseParentNode(parent.Rule, newChildren) : parent;
-                }
-
-                return baseLeafIndex == oldCursorLeafIndex ? toUpdate.WithoutCursor()
-                    : baseLeafIndex == newCursorLeafIndex ? toUpdate.WithCursor(0)
-                    : toUpdate;
-            }
-        }
-
         private IReadOnlyList<PotentialParseParentNode> Specialize(
             PotentialParseParentNode node, 
             Token lookahead)
