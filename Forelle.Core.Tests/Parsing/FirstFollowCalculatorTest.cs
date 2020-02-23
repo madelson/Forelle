@@ -31,7 +31,7 @@ namespace Forelle.Tests.Parsing
                 { ArgList, Exp },
             });
             
-            var firstFollow = FirstFollowCalculator.Create(rules);
+            var firstFollow = this.CreateProvider(rules);
 
             firstFollow.FirstOf(Stmt).CollectionShouldEqual(new[] { Id, LeftParen, Return, });
             firstFollow.FirstOf(Exp).CollectionShouldEqual(new[] { Id, LeftParen, });
@@ -93,11 +93,13 @@ namespace Forelle.Tests.Parsing
                 { B }
             };
 
-            var firstFollow = FirstFollowCalculator.Create(rules);
+            var firstFollow = this.CreateProvider(rules);
             CollectionAssert.AreEquivalent(new[] { Plus }, firstFollow.FirstOf(A));
             CollectionAssert.AreEquivalent(new[] { Minus, null }, firstFollow.FirstOf(B));
             CollectionAssert.AreEquivalent(new[] { Minus }, firstFollow.FollowOf(A));
             CollectionAssert.AreEquivalent(new[] { Minus }, firstFollow.FollowOf(B));
         }
+
+        internal virtual IFirstFollowProvider CreateProvider(IReadOnlyCollection<Rule> rules) => FirstFollowCalculator.Create(rules);
     }
 }
