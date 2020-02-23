@@ -87,14 +87,37 @@ namespace Forelle.Parsing.Preprocessing.LR.V3
             return result.ToImmutable();
         }
 
+        public ImmutableHashSet<IReadOnlyList<Token>> FollowOf(Symbol symbol, int k)
+        {
+            if (!this._followSetsByK.TryGetValue(k, out var followSets))
+            {
+                followSets = this._followSetsByK[k] = this.ComputeFollowSets(k);
+            }
+
+            return followSets[symbol];
+        }
+
+        public ImmutableHashSet<IReadOnlyList<Token>> NextOf(IEnumerable<Symbol> symbols, NonTerminal produced, int k)
+        {
+            var firstSet = this.FirstOf(symbols, k);
+            var firstSetByIsKLength = firstSet.ToLookup(s => s.Count == k);
+
+            if (!firstSetByIsKLength[false].Any()) { return firstSet; }
+
+            var followSet = this.FollowOf(produced, k);
+
+            return firstSetByIsKLength[false]
+                .SelectMany(_ => followSet, (prefix, suffix) => prefix.Concat(suffix).Take(k).ToArray())
+                .Concat(firstSetByIsKLength[true])
+                .ToImmutableHashSet(Comparer);
+        }
+
         // todo trie
         private IReadOnlyDictionary<Symbol, ImmutableHashSet<IReadOnlyList<Token>>> ComputeFirstSets(int k)
         {
             Invariant.Require(k >= 0);
 
-            var allSymbols = this._rulesByProduced.SelectMany(g => g.SelectMany(r => r.Symbols).Concat(new[] { g.Key }))
-                .Distinct()
-                .ToArray();
+            var allSymbols = this.GetAllSymbols().ToArray();
 
             if (k == 0)
             {
@@ -150,7 +173,7 @@ namespace Forelle.Parsing.Preprocessing.LR.V3
                                 if (childSymbol is NonTerminal childNonTerminal
                                     && incomplete.TryGetValue(childNonTerminal, out var childIncomplete))
                                 {
-                                    var prefixesAndChildIncompletes = childIncomplete.ToArray() // avoid concurrent modificiation
+                                    var prefixesAndChildIncompletes = childIncomplete.ToArray() // allow concurrent modificiation
                                         .SelectMany(_ => prefixes, (childIncompleteSequence, prefix) => prefix.Concat(childIncompleteSequence))
                                         .Select(s => s.Take(k).ToArray());
                                     foreach (var prefixThenChildIncomplete in prefixesAndChildIncompletes)
@@ -167,7 +190,7 @@ namespace Forelle.Parsing.Preprocessing.LR.V3
                                 }
 
                                 // Next, compute the cross-product of prefixes with completeds for the child symbol
-                                var prefixesAndChildCompletes = completed[childSymbol].ToArray() // avoid concurrent modification
+                                var prefixesAndChildCompletes = completed[childSymbol].ToArray() // allow concurrent modification
                                     .SelectMany(_ => prefixes, (childCompleteSequence, prefix) => prefix.Concat(childCompleteSequence))
                                     .Select(s => s.Take(k).ToArray());
                                 List<Token[]> newPrefixes = null;
@@ -236,5 +259,105 @@ namespace Forelle.Parsing.Preprocessing.LR.V3
                     .ToImmutableHashSet(Comparer)
             );
         }
+
+        private IReadOnlyDictionary<Symbol, ImmutableHashSet<IReadOnlyList<Token>>> ComputeFollowSets(int k)
+        {
+            Invariant.Require(k >= 0);
+
+            var completed = this.GetAllSymbols()
+                .ToDictionary(s => s, s => ImmutableHashSet.CreateBuilder(Comparer));
+            var incomplete = completed.Keys
+                .ToDictionary(s => s, s => ImmutableHashSet.Create(Comparer));
+
+            // first, pre-compute the first set for each sequence of symbols REM following S in a rule P -> ... S REM
+            var symbolsToRemaindersAndFirstSets = this._rulesByProduced.SelectMany(g => g)
+                .SelectMany(r => Enumerable.Range(0, r.Symbols.Count), (r, index) => (symbol: r.Symbols[index], remainder: r.Skip(index + 1)))
+                .ToLookup(
+                    t => t.symbol,
+                    t => (t.remainder, firstSet: this.FirstOf(t.remainder.Symbols, k))
+                );
+
+            // Symbols which are never referenced cannot be followed, while symbols which are only referenced
+            // recursively might be follow-able but also can appear at the end of strings in the language.
+            // For these symbols, pre-populate the completed set with the empty sequence
+            foreach (var symbol in completed.Keys
+                .Where(s => !symbolsToRemaindersAndFirstSets[s].Any() || symbolsToRemaindersAndFirstSets[s].All(t => t.remainder.Produced == s)))
+            {
+                completed[symbol].Add(Array.Empty<Token>());
+            }
+
+            bool changed;
+            do
+            {
+                changed = false;
+
+                foreach (var (symbol, symbolIncomplete) in incomplete.ToArray()) // allow concurrent modification
+                {
+                    var newSymbolIncomplete = ImmutableHashSet.CreateBuilder(Comparer);
+
+                    foreach (var (remainder, firstSet) in symbolsToRemaindersAndFirstSets[symbol])
+                    {
+                        foreach (var firstSetSequence in firstSet)
+                        {
+                            if (firstSetSequence.Count == k)
+                            {
+                                changed |= completed[symbol].Add(firstSetSequence);
+                            }
+                            else
+                            {
+                                // try combining with each incomplete sequence
+                                foreach (var incompleteSequence in incomplete[remainder.Produced])
+                                {
+                                    var concatenated = firstSetSequence.Concat(incompleteSequence).Take(k).ToArray();
+                                    if (concatenated.Length == k)
+                                    {
+                                        changed |= completed[symbol].Add(concatenated);
+                                    }
+                                    else
+                                    {
+                                        newSymbolIncomplete.Add(concatenated);
+                                    }
+                                }
+
+                                // combine with each complete sequence
+                                foreach (var completedSequence in completed[remainder.Produced].ToArray()) // avoid concurrent modification
+                                {
+                                    var concatenated = firstSetSequence.Concat(completedSequence).Take(k).ToArray();
+                                    changed |= completed[symbol].Add(concatenated);
+                                }
+                            }
+                        }
+                    }
+
+                    if (newSymbolIncomplete.Count == 0)
+                    {
+                        incomplete.Remove(symbol); // all done
+                    }
+                    else
+                    {
+                        // see similar logic in ComputeFirstSets
+                        if (!changed)
+                        {
+                            if (!newSymbolIncomplete.SetEquals(symbolIncomplete))
+                            {
+                                incomplete[symbol] = newSymbolIncomplete.ToImmutable();
+                                changed = true; // forward progress made!
+                            }
+                        }
+                        else
+                        {
+                            incomplete[symbol] = newSymbolIncomplete.ToImmutable();
+                        }
+                    }
+                }
+            }
+            while (changed);
+
+            return completed.ToDictionary(kvp => kvp.Key, kvp => kvp.Value.ToImmutable());
+        }
+
+        private IEnumerable<Symbol> GetAllSymbols() => this._rulesByProduced
+            .SelectMany(g => g.SelectMany(r => r.Symbols).Concat(new[] { g.Key }))
+            .Distinct();
     }
 }

@@ -1,6 +1,5 @@
 ﻿using Forelle.Parsing;
 using Forelle.Parsing.Preprocessing.LR.V3;
-using Medallion.Collections;
 using NUnit.Framework;
 using System;
 using System.Collections.Generic;
@@ -34,13 +33,22 @@ namespace Forelle.Tests.Parsing
                 { M, b, c }
             };
 
-            var firstSetGenerator = new FirstFollowKCalculator(rules.ToLookup(r => r.Produced));
+            var firstFollowK = new FirstFollowKCalculator(rules.ToLookup(r => r.Produced));
 
             for (var k = 0; k <= 4; ++k)
             {
                 CollectionAssert.AreEquivalent(
-                    actual: ToStrings(firstSetGenerator.FirstOf(new[] { N, M }, k)),
+                    actual: ToStrings(firstFollowK.FirstOf(new[] { N, M }, k)),
                     expected: new[] { "stbc".Substring(0, k) },
+                    message: $"k = {k}"
+                );
+            }
+
+            for (var k = 0; k < 2; ++k)
+            {
+                CollectionAssert.AreEquivalent(
+                    actual: ToStrings(firstFollowK.FollowOf(N, k)),
+                    expected: new[] { "bc".Substring(0, k) },
                     message: $"k = {k}"
                 );
             }
@@ -68,26 +76,26 @@ namespace Forelle.Tests.Parsing
                 { L, b, c },
             };
 
-            var firstSetGenerator = new FirstFollowKCalculator(rules.ToLookup(r => r.Produced));
+            var firstFollowK = new FirstFollowKCalculator(rules.ToLookup(r => r.Produced));
             var sequence = new[] { N, M, L };
 
             CollectionAssert.AreEquivalent(
-                actual: ToStrings(firstSetGenerator.FirstOf(sequence, k: 1)),
+                actual: ToStrings(firstFollowK.FirstOf(sequence, k: 1)),
                 expected: new[] { "s", "t", "b" }
             );
 
             CollectionAssert.AreEquivalent(
-                actual: ToStrings(firstSetGenerator.FirstOf(sequence, k: 2)),
+                actual: ToStrings(firstFollowK.FirstOf(sequence, k: 2)),
                 expected: new[] { "ss", "st", "sb", "tt", "tb", "bc" }
             );
 
             CollectionAssert.AreEquivalent(
-                actual: ToStrings(firstSetGenerator.FirstOf(sequence, k: 3)),
+                actual: ToStrings(firstFollowK.FirstOf(sequence, k: 3)),
                 expected: new[] { "sss", "sst", "ssb", "stt", "stb", "sbc", "ttt", "ttb", "tbc", "bc" }
             );
 
             CollectionAssert.AreEquivalent(
-                actual: ToStrings(firstSetGenerator.FirstOf(sequence, k: 4)),
+                actual: ToStrings(firstFollowK.FirstOf(sequence, k: 4)),
                 expected: new[] { "ssss", "ssst", "sssb", "sstt", "sstb", "ssbc", "sttt", "sttb", "stbc", "tttt", "tttb", "ttbc", "tbc", "sbc", "bc" }
             );
         }
@@ -108,15 +116,15 @@ namespace Forelle.Tests.Parsing
                 { Y },
             };
 
-            var firstSetGenerator = new FirstFollowKCalculator(rules.ToLookup(r => r.Produced));
+            var firstFollowK = new FirstFollowKCalculator(rules.ToLookup(r => r.Produced));
 
             CollectionAssert.AreEquivalent(
-                actual: ToStrings(firstSetGenerator.FirstOf(new[] { X, Y }, k: 1)),
+                actual: ToStrings(firstFollowK.FirstOf(new[] { X, Y }, k: 1)),
                 expected: new[] { "a" }
             );
 
             CollectionAssert.AreEquivalent(
-                actual: ToStrings(firstSetGenerator.FirstOf(new[] { X, Y }, k: 2)),
+                actual: ToStrings(firstFollowK.FirstOf(new[] { X, Y }, k: 2)),
                 expected: new[] { "a", "ab" }
             );
         }
@@ -138,16 +146,26 @@ namespace Forelle.Tests.Parsing
                 { Y },
             };
 
-            var firstSetGenerator = new FirstFollowKCalculator(rules.ToLookup(r => r.Produced));
+            var firstFollowK = new FirstFollowKCalculator(rules.ToLookup(r => r.Produced));
 
             CollectionAssert.AreEquivalent(
-                actual: ToStrings(firstSetGenerator.FirstOf(new[] { X, Y }, k: 1)),
+                actual: ToStrings(firstFollowK.FirstOf(new[] { X, Y }, k: 1)),
                 expected: new[] { "a" }
             );
 
             CollectionAssert.AreEquivalent(
-                actual: ToStrings(firstSetGenerator.FirstOf(new[] { X, Y }, k: 2)),
+                actual: ToStrings(firstFollowK.FirstOf(new[] { X, Y }, k: 2)),
                 expected: new[] { "a", "ab", "aa" }
+            );
+
+            CollectionAssert.AreEquivalent(
+                actual: ToStrings(firstFollowK.FollowOf(X, 5)),
+                expected: new[] { string.Empty, "a", "aa", "aaa", "aaaa", "aaaaa" }
+            );
+
+            CollectionAssert.AreEquivalent(
+                actual: ToStrings(firstFollowK.NextOf(new[] { X, Y, X }, X, 3)),
+                expected: new[] { "aa", "aab", "aba", "aaa" }
             );
         }
 
@@ -177,10 +195,10 @@ namespace Forelle.Tests.Parsing
                 { U, u },
             };
 
-            var firstSetGenerator = new FirstFollowKCalculator(rules.ToLookup(r => r.Produced));
+            var firstFollowK = new FirstFollowKCalculator(rules.ToLookup(r => r.Produced));
 
             CollectionAssert.AreEquivalent(
-                actual: ToStrings(firstSetGenerator.FirstOf(new[] { X, Y, Z, U }, k: 2)),
+                actual: ToStrings(firstFollowK.FirstOf(new[] { X, Y, Z, U }, k: 2)),
                 expected: new[] { "xy", "yy", "zy", "zz", "zu", "xu", "xz", "yz", "yx", "yu", "zx", "xx", "u" }
             );
         }
@@ -209,10 +227,10 @@ namespace Forelle.Tests.Parsing
                 .Select(t => t.SingleOrDefault())
                 .ToImmutableHashSet();
 
-            public ImmutableHashSet<Token> FollowOf(Symbol symbol)
-            {
-                throw new NotImplementedException();
-            }
+            public ImmutableHashSet<Token> FollowOf(Symbol symbol) => this._firstFollowKCalculator.FollowOf(symbol, k: 1)
+                .Where(t => t.Count > 0)
+                .Select(t => t.Single())
+                .ToImmutableHashSet();
 
             public ImmutableHashSet<Token> FollowOf(Rule rule) => this.FollowOf(rule.Produced);
         }

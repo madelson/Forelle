@@ -1,12 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Text;
 
 namespace Forelle
 {
     internal static class Invariant
     {
-        // todo add conditional attribute
+        [Conditional("DEBUG")]
         public static void Require(bool condition, string message = null)
         {
             if (!condition)
