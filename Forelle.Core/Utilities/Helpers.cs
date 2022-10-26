@@ -36,6 +36,18 @@ namespace Forelle
 
         public static T As<T>(this T @this) => @this;
 
+        public static bool TryAdd<T>(ref ImmutableHashSet<T> set, T value)
+        {
+            var original = set;
+            return (set = original.Add(value)) != original;
+        }
+
+        public static bool TryRemove<T>(ref ImmutableHashSet<T> set, T value)
+        {
+            var original = set;
+            return (set = original.Remove(value)) != original;
+        }
+
         public static void Deconstruct<TKey, TValue>(this KeyValuePair<TKey, TValue> keyValuePair, out TKey key, out TValue value)
         {
             key = keyValuePair.Key;
@@ -46,6 +58,13 @@ namespace Forelle
         {
             return (lookup ?? throw new ArgumentNullException(nameof(lookup)))
                 .Select(g => g.Key);
+        }
+
+        public static bool TryGetValue<T>(this T? nullable, out T value)
+            where T : struct
+        {
+            value = nullable.GetValueOrDefault();
+            return nullable.HasValue;
         }
 
         // todo clean up

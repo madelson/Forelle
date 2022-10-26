@@ -1,0 +1,27 @@
+tokens:
+	-> parsed as a class (i.e. we ask the parser for the NEXT TOKEN, not a specific type of token)
+		-> if we wanted, we could allow for explicit named classes to solve parsing problems like Razor
+	-> have trivia (leading and trailing). Trivia becomes leading after the first newline character (\n)
+	-> leftmost longest match
+	-> ambiguity is allowed (e.g. contextual keywords) => handled by parsing context
+	-> can have structure (e.g. string interpolation), but must start with a non-empty text pattern
+
+trivia:
+	-> parsed as a class, much like tokens
+	-> leftmost longest match
+	-> ambiguity not allowed
+	-> can have structure (e.g. doc comments, recursive comments), but must start with a non-empty text pattern
+	
+	
+symbol: (todo name)
+	-> parsed on demand (i.e. we ask the parser to parse the particular symbol or set of possible symbols)
+	-> always structured, with no text patterns
+	-> ambiguity resolved by precedence, lookahead, etc
+	
+Alg:
+
+lexical analysis:
+	-> determine which trivia/tokens are known to be differentiable vs. not by building DFA w/text pattern prefixes
+	-> undifferentiable trivia is an ERROR
+	->  
+	
