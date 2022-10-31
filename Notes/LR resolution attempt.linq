@@ -10,7 +10,8 @@
 void Main()
 {
 	//TestSimpleAmbiguity();	
-	TestLargeGrammar();
+	//TestLargeGrammar();
+	TestSmallReduceReduce();
 }
 
 class LRGenerator
@@ -18,12 +19,13 @@ class LRGenerator
 	private readonly Rule _start;
 	private readonly FirstFollowCalculator _firstFollow;
 	private readonly ILookup<NonTerminal, Rule> _rulesByProduced;
+	private HashSet<LRItem> _startState = default!;
 	private readonly Dictionary<IReadOnlyCollection<LRItem>, HashSet<LRItem>> _statesByKernel = new(EqualityComparers.GetCollectionComparer<LRItem>());
 	private readonly HashSet<HashSet<LRItem>> _states = new(EqualityComparers.GetCollectionComparer<LRItem>());
 	private readonly Dictionary<HashSet<LRItem>, HashSet<(Symbol Symbol, HashSet<LRItem> Destination)>> _edges = new();
 	private readonly Dictionary<HashSet<LRItem>, HashSet<(Token Token, Rule Rule)>> _reductions = new();
 
-	private readonly Dictionary<HashSet<LRItem>, HashSet<(Token Token, Dictionary<HashSet<LRItem>, HashSet<LRItem>> Mapping)>> _mappedShiftReductions = new();
+	private readonly Dictionary<HashSet<LRItem>, HashSet<(Token Token, int SymbolCount, Dictionary<HashSet<LRItem>, HashSet<LRItem>> Mapping)>> _mappedShiftReductions = new();
 
 	public LRGenerator(Rule[] rules)
 	{
@@ -32,11 +34,90 @@ class LRGenerator
 		this._firstFollow = FirstFollowCalculator.Create(rules);
 	}
 
+	public ParsedNode Parse(IReadOnlyList<Token> tokens, bool log = false)
+	{
+		var parseStack = new Stack<ParsedNode>();
+		var stateStack = new Stack<HashSet<LRItem>>();
+		stateStack.Push(this._startState);
+		
+		if (log) { $"PARSING {string.Join(", ", tokens)}".Dump(); }
+		
+		var i = 0;
+		while (i < tokens.Count)
+		{
+			var token = tokens[i];
+			if (log) { $"{token}@{i} (stateStack.Count={stateStack.Count}, parseStack=[{string.Join(", ", parseStack.Reverse())}])".Dump(); }
+
+			var state = stateStack.Peek();
+			if (log) { ToString(state).Dump(); }	
+			
+			if (this._edges.TryGetValue(state, out var edges))
+			{
+				var shift = edges.SingleOrDefault(e => e.Symbol == token);
+				if (shift.Destination != null)
+				{
+					parseStack.Push(new ParsedToken(token));
+					++i;
+					stateStack.Push(shift.Destination);
+					if (log) { "SHIFT".Dump(); }
+					continue;
+				}
+			}
+			
+			if (this._reductions.TryGetValue(state, out var reductions))
+			{
+				var reduction = reductions.SingleOrDefault(t => t.Token == token);
+				if (reduction.Rule != null)
+				{
+					var children = new ParsedNode[reduction.Rule.Symbols.Length];
+					for (var c = children.Length - 1; c >= 0; --c)
+					{
+						children[c] = parseStack.Pop();
+						stateStack.Pop();
+					}
+					parseStack.Push(new ParsedNonTerminal(reduction.Rule, children));
+					stateStack.Push(this._edges[stateStack.Peek()].Single(e => e.Symbol == reduction.Rule.Produced).Destination);
+					if (log) { $"REDUCE {new RuleRemainder(reduction.Rule, reduction.Rule.Symbols.Length)}".Dump(); }
+					continue;
+				}
+			}
+			
+			if (this._mappedShiftReductions.TryGetValue(state, out var mappedShiftReductions))
+			{
+				var mappedShiftReduction = mappedShiftReductions.SingleOrDefault(t => t.Token == token);
+				if (mappedShiftReduction.Mapping != null)
+				{
+					for (var j = 0; j < mappedShiftReduction.SymbolCount; ++j) 
+					{
+						stateStack.Pop();	
+					}
+					stateStack.Push(mappedShiftReduction.Mapping[stateStack.Peek()]);
+					if (log) { "MAPSHIFTREDUCE".Dump(); }
+					continue;
+				}
+			}
+			
+			throw new Exception($"parsing error at {i}");
+		}
+
+		{
+			var children = new ParsedNode[this._start.Symbols.Length];
+			for (var c = children.Length - 1; c >= 0; --c)
+			{
+				children[c] = parseStack.Pop();
+				stateStack.Pop();
+			}
+			parseStack.Push(new ParsedNonTerminal(this._start, children));
+			Debug.Assert(stateStack.Count == 1);
+		}
+		return parseStack.Single();
+	}
+
 	public void Generate()
 	{
-		this.Closure(new[] { new LRItem(new(this._start, 0), null!) }, out var startState);
+		this.Closure(new[] { new LRItem(new(this._start, 0), null!) }, out this._startState);
 		var statesToProcess = new Queue<HashSet<LRItem>>();
-		statesToProcess.Enqueue(startState);
+		statesToProcess.Enqueue(this._startState);
 
 		void ProcessStates()
 		{
@@ -97,7 +178,7 @@ class LRGenerator
 					var newGotoKernel = originalGotoStates.Aggregate<IEnumerable<LRItem>>((s1, s2) => s1.Union(s2))
 						.Select(i => (Item: i, Rule: rules.SingleOrDefault(r => r.Produced == (i.Rule.Position < 1 ? null : i.Rule.Rule.Symbols[i.Rule.Position - 1]))))
 						.Select(
-							t => t.Rule is null
+							t => t.Rule is null || !this._firstFollow.FirstOf(t.Item.Rule.Symbols).Select(s => s ?? t.Item.Lookahead).Contains(conflictToResolve.Key.Symbol)
 								? t.Item
 								: new LRItem(
 									new RuleRemainder(
@@ -125,7 +206,7 @@ class LRGenerator
 				{
 					this._mappedShiftReductions.Add(conflictToResolve.Key.State, mappedShiftReductions = new());
 				}
-				mappedShiftReductions.Add(((Token)conflictToResolve.Key.Symbol, stateMapping));
+				mappedShiftReductions.Add(((Token)conflictToResolve.Key.Symbol, rules.Select(r => r.Symbols.Length).Distinct().Single(), stateMapping));
 			}
 			ProcessStates();
 		}
@@ -148,9 +229,9 @@ class LRGenerator
 				Actions = c.Select(a => new { a.Type, Target = a.Target is Rule rule ? new RuleRemainder(rule, rule.Symbols.Length).ToString() : a.Target.GetHashCode().ToString() }).ToArray()
 			})
 		}.Dump("post-resolution conflicts");
-
-		string ToString(IEnumerable<LRItem> state) => string.Join(Environment.NewLine, state.Select(i => i.ToString()).OrderBy(s => s));
 	}
+
+	static string ToString(IEnumerable<LRItem> state) => string.Join(Environment.NewLine, state.Select(i => i.ToString()).OrderBy(s => s));
 
 	private IReadOnlyCollection<HashSet<LRItem>> GetReductionTargetStates(HashSet<LRItem> state, Rule rule)
 	{
@@ -273,17 +354,20 @@ public record RuleRemainder(Rule Rule, int Position)
 			if (this.Position == i)
 			{
 				builder.Append(i > 0 ? " •" : "•");
-				if (i < this.Rule.Symbols.Length) { builder.Append(' '); }
 			}
 			if (i < this.Rule.Symbols.Length)
 			{
-				if (i > 0) { builder.Append(' '); }
+				if (i > 0 || i == this.Position) { builder.Append(' '); }
 				builder.Append(this.Rule.Symbols[i]);
 			}
 		}
 		return builder.ToString();
 	}
 }
+
+public abstract record ParsedNode;
+public record ParsedToken(Token Token) : ParsedNode { public override string ToString() => this.Token.Name; }
+public record ParsedNonTerminal(Rule Rule, ParsedNode[] Symbols) : ParsedNode { public override string ToString() => $"{this.Rule.Produced}({string.Join(", ", this.Symbols.AsEnumerable())})"; }
 
 #region FirstFollowProvider
 internal class FirstFollowCalculator
@@ -468,6 +552,25 @@ void TestSimpleAmbiguity()
 	new LRGenerator(rules).Generate();
 }
 
+void TestSmallReduceReduce()
+{
+	NonTerminal A = new("A"), B = new("B");	
+	
+	var rules = new Rule[]
+	{
+		new(Start, Exp, eof),
+		new(Exp, A, plus, A, plus, semicolon),
+		new(Exp, B, plus, B, plus, dot),
+		new(A, id),
+		new(B, id),
+	};
+	
+	var generator = new LRGenerator(rules);
+	generator.Generate();
+	generator.Parse(new[] { id, plus, id, plus, semicolon, eof }, log: true).ToString().Dump();
+	generator.Parse(new[] { id, plus, id, plus, dot, eof }).ToString().Dump();
+}
+
 void TestLargeGrammar()
 {
 	Token goesTo = new("GOESTO"), var = new("VAR"), assign = new("ASSIGN"), @return = new("RETURN");
@@ -530,6 +633,9 @@ void TestLargeGrammar()
 		new(ArgList, Exp),
 	};
 
-	new LRGenerator(rules).Generate();
+	var generator = new LRGenerator(rules);
+	generator.Generate();
+	generator.Parse(new[] { id, semicolon, eof }).ToString().Dump();
+	generator.Parse(new[] { leftParen, rightParen, goesTo, leftParen, rightParen, semicolon, eof }, log: true).ToString().Dump();
 }
 #endregion
