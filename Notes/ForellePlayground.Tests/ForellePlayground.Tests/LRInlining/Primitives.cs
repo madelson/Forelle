@@ -46,7 +46,7 @@ internal sealed class Rule : ISymbol
 
         void GatherDescendants(Rule rule)
         {
-            foreach (var symbol in this.Symbols)
+            foreach (var symbol in rule.Symbols)
             {
                 if (symbol is Rule childRule)
                 {
@@ -58,6 +58,50 @@ internal sealed class Rule : ISymbol
                 }
             }
         }
+    }
+
+    public Rule ReplaceDescendant(int index, ISymbol replacement)
+    {
+        Invariant.Require(index >= 0 && index < this.Descendants.Length);
+
+        var symbols = this.Symbols;
+        var i = 0;
+        while (true)
+        {
+            if (symbols[i] is Rule rule)
+            {
+                if (index >= rule.Descendants.Length)
+                {
+                    index -= rule.Descendants.Length;
+                }
+                else
+                {
+                    return this.ReplaceSymbol(i, rule.ReplaceDescendant(index, replacement));
+                }
+            }
+            else if (index != 0)
+            {
+                --index;
+            }
+            else
+            {
+                return this.ReplaceSymbol(i, replacement);
+            }
+
+            ++i;
+        }
+    }
+
+    private Rule ReplaceSymbol(int index, ISymbol replacement)
+    {
+        Invariant.Require(index >= 0 && index < this.Symbols.Length);
+        Invariant.Require(this.Symbols[index] is not Rule);
+        Invariant.Require(this.Symbols[index] != replacement);
+
+        Rule newRule = new(this.Produced, this._symbols);
+        newRule._symbols[index] = replacement;
+
+        return newRule;
     }
 
     public override bool Equals(object? obj) => obj is Rule that

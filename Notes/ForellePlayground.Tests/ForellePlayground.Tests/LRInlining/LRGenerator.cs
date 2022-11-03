@@ -22,57 +22,19 @@ internal class LRGenerator
         this._firstFollow = FirstFollowCalculator.Create(rules);
     }
 
-    //public static LRState[] Generate(Rule[] rules)
-    //{
-    //    while (true)
-    //    {
-    //        LRGenerator generator = new(rules);
-    //        var states = generator.Generate();
-    //        var conflicts = new Dictionary<Rule, HashSet<Token>>();
-    //        foreach (var state in states)
-    //        {
-    //            foreach (var symbol in state.SymbolsWithActions)
-    //            {
-    //                var actions = state.GetActions(symbol);
-    //                if (actions.Length > 1)
-    //                {
-    //                    var reductions = actions.ToArray().OfType<Reduce>().ToArray();
-    //                    Invariant.Require(reductions.Length >= actions.Length - 1); // no shift-shift conflicts
-    //                    foreach (var reduction in reductions)
-    //                    {
-    //                        var items = state.ItemsList.Where(i => i.Rule == new MarkedRule(reduction.Rule, reduction.Rule.Descendants.Length))
-    //                            .ToArray();
-    //                        Invariant.Require(items.Length > 0);
-    //                        if (!conflicts.TryGetValue(reduction.Rule, out var lookaheadTokens))
-    //                        {
-    //                            conflicts.Add(reduction.Rule, lookaheadTokens = new());
-    //                        }
-    //                        foreach (var item in items) { lookaheadTokens.Add(item.Lookahead); }
-    //                    }
-    //                }
-    //            }
-    //        }
+    public static LRState[] Generate(Rule[] rules)
+    {
+        while (true)
+        {
+            LRGenerator generator = new(rules);
+            var states = generator.Generate();
+            var conflicts = generator.GetConflicts();
 
-    //        if (conflicts.Count == 0) { return states; }
+            if (conflicts.Count == 0) { return states; }
 
-
-    //    }
-    //}
-
-    ////private Rule[] Inline(IReadOnlyList<Rule> rules, Dictionary<Rule, HashSet<Token>> conflicts)
-    ////{
-    ////    var inlinedNonTerminals = conflicts.GroupBy(kvp => kvp.Key.Produced)
-    ////        .ToDictionary(
-    ////            g => g.Key,
-    ////            g => (
-    ////                Lookahead: g.Select(kvp => kvp.Value.AsEnumerable()).Aggregate(Enumerable.Concat).ToHashSet(),
-    ////                )
-    ////}
-
-    //private MarkedRule Inline(MarkedRule rule, Dictionary<NonTerminal, (Rule[] InlinedRules, HashSet<Token> Lookahead)> inlinedSymbols)
-    //{
-
-    //}
+            rules = Inliner.Inline(rules, generator._firstFollow, conflicts);
+        }
+    }
 
     public LRState[] Generate()
     {
@@ -99,6 +61,65 @@ internal class LRGenerator
         }
 
         return this._statesByItems.Values.OrderBy(v => v.Id).ToArray();
+    }
+
+    private Dictionary<Rule, HashSet<Token>> GetConflicts()
+    {
+        var inlinedRules = new Dictionary<Rule, HashSet<Token>>();
+
+        foreach (var state in this._statesByItems.Values)
+        {
+            foreach (var symbol in state.SymbolsWithActions)
+            {
+                var actions = state.GetActions(symbol);
+                if (actions.Length > 1)
+                {
+                    var reductions = actions.ToArray().OfType<Reduce>().ToArray();
+                    // shift/reduce conflict: inline the reductions (TODO will not work with left recursion?)
+                    if (reductions.Length < actions.Length)
+                    {
+                        foreach (var reduction in reductions) { AddInlinedRule(reduction.Rule); }
+                    }
+                    else
+                    {
+                        var lengths = reductions.Select(r => r.Rule.Descendants.Length).Distinct().ToArray();
+                        // reduce/reduce with different lengths: inline the shorter ones
+                        if (lengths.Length > 1)
+                        {
+                            var maxLength = lengths.Max();
+                            foreach (var reduction in reductions.Where(r => r.Rule.Descendants.Length != maxLength))
+                            {
+                                AddInlinedRule(reduction.Rule);
+                            }
+                        }
+                        // ambiguity detected
+                        else if (reductions.Select(r => r.Rule.Produced).Distinct().Count() < reductions.Length)
+                        {
+                            throw new InvalidOperationException("AMBIGUITY"); // todo
+                        }
+                        // reduce/reduce with same length, different produced
+                        else
+                        {
+                            foreach (var reduction in reductions) { AddInlinedRule(reduction.Rule); }
+                        }
+                    }
+                }
+            }
+
+            void AddInlinedRule(Rule rule)
+            {
+                var items = state.ItemsList.Where(i => i.Rule == new MarkedRule(rule, rule.Descendants.Length))
+                    .ToArray();
+                Invariant.Require(items.Length > 0);
+                if (!inlinedRules.TryGetValue(rule, out var lookaheadTokens))
+                {
+                    inlinedRules.Add(rule, lookaheadTokens = new());
+                }
+                foreach (var item in items) { lookaheadTokens.Add(item.Lookahead); }
+            }
+        }
+
+        return inlinedRules;
     }
 
     private LRState ClosureFromKernelBuilder(out bool createdNew)

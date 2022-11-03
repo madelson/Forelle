@@ -82,8 +82,7 @@ public class LRInliningTest
 
     private static TestingParser CreateParser(Rule[] rules)
     {
-        LRGenerator generator = new(rules);
-        var states = generator.Generate();
+        var states = LRGenerator.Generate(rules);
         Console.WriteLine(DebuggingHelpers.CreateLRTableHtml(states));
         return new(states);
     }

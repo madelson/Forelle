@@ -43,13 +43,7 @@ internal class TestingParser
                     stateStack.Push(destination);
                     break;
                 case Reduce { Rule: var rule }:
-                    var children = new ISymbol[rule.Symbols.Length];
-                    for (var c = children.Length - 1; c >= 0; --c)
-                    {
-                        children[c] = parseStack.Pop();
-                        stateStack.Pop();
-                    }
-                    parseStack.Push(new Rule(rule.Produced, children));
+                    ReduceBy(rule);
                     if (token == LRGenerator.Accept) { return (Rule)parseStack.Single(); }
                     var gotoActions = stateStack.Peek().GetActions(rule.Produced);
                     if (gotoActions.Length != 1) { throw new InvalidOperationException($"Multiple goto actions for state {state.Id}, symbol {rule.Produced}"); }
@@ -61,5 +55,24 @@ internal class TestingParser
         }
 
         throw new InvalidOperationException("Should never get here");
+
+        void ReduceBy(Rule rule)
+        {
+            var children = new ISymbol[rule.Symbols.Length];
+            for (var c = children.Length - 1; c >= 0; --c)
+            {
+                if (rule.Symbols[c] is Rule inlineRule)
+                {
+                    ReduceBy(inlineRule);
+                }
+                else
+                {
+                    // only pop state when we pop a token
+                    stateStack.Pop();
+                }
+                children[c] = parseStack.Pop();
+            }
+            parseStack.Push(new Rule(rule.Produced, children));
+        }
     }
 }
