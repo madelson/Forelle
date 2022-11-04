@@ -130,7 +130,7 @@ internal record struct MarkedRule(Rule Rule, int Position)
 {
 #if DEBUG
     public int Position { get; } = 
-        Position >= 0 && Position <= Rule.Symbols.Length 
+        Position >= 0 && Position <= Rule.Descendants.Length 
             ? Position 
             : throw new ArgumentOutOfRangeException(nameof(Position), Position, $"Must be in [0, {Rule.Symbols.Length}]");
 #endif

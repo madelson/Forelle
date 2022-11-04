@@ -80,6 +80,32 @@ public class LRInliningTest
             .ShouldEqual("Start(Exp(B(ID) ID TIMES) EOF)");
     }
 
+    [Test]
+    public void TestLRNone()
+    {
+        NonTerminal A = new("A"), B = new("B"), C = new("C"), P = new("P");
+
+        var rules = new Rule[]
+        {
+            new(Start, Exp, EOF),
+            new(Exp, A, C, SEMI),
+            new(Exp, B, C, TIMES),
+            new(A, P, ID),
+            new(B, ID, P),
+            new(P, ID, ID),
+            new(C),
+            new(C, LBRACKET, C, RBRACKET),
+        };
+
+        var parser = CreateParser(rules);
+
+        parser.Parse(ID, ID, ID, LBRACKET, LBRACKET, RBRACKET, RBRACKET, SEMI, EOF).ToString()
+            .ShouldEqual("Start(Exp(A(P(ID ID) ID) C(LBRACKET C(LBRACKET C() RBRACKET) RBRACKET) SEMI) EOF)");
+
+        parser.Parse(ID, ID, ID, LBRACKET, LBRACKET, RBRACKET, RBRACKET, TIMES, EOF).ToString()
+            .ShouldEqual("Start(Exp(B(ID P(ID ID)) C(LBRACKET C(LBRACKET C() RBRACKET) RBRACKET) TIMES) EOF)");
+    }
+
     private static TestingParser CreateParser(Rule[] rules)
     {
         var states = LRGenerator.Generate(rules);
