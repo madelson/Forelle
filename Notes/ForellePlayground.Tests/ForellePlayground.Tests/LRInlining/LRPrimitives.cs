@@ -48,6 +48,8 @@ internal sealed class LRState
 
     public ReadOnlySpan<LRAction> GetActions(Symbol symbol) =>
         this._actions.TryGetValue(symbol, out var symbolActions) ? symbolActions : ReadOnlySpan<LRAction>.Empty;
+
+    public void ClearActions(Symbol symbol) => this._actions.Remove(symbol);
 }
 
 internal abstract record LRAction;

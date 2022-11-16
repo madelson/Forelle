@@ -95,7 +95,6 @@ internal sealed class Rule : ISymbol
     private Rule ReplaceSymbol(int index, ISymbol replacement)
     {
         Invariant.Require(index >= 0 && index < this.Symbols.Length);
-        Invariant.Require(this.Symbols[index] is not Rule);
         Invariant.Require(this.Symbols[index] != replacement);
 
         Rule newRule = new(this.Produced, this._symbols);
