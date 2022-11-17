@@ -116,8 +116,15 @@ internal class LRGenerator
                         // reduce/reduce with same length, different produced
                         else
                         {
-                            // note: this is not a general condition; just something to try it out
-                            if (reductions.All(r => r.Rule.Descendants.IsEmpty || r.Rule.Descendants.Contains(r.Rule.Produced)))
+                            // Note: this is not a general condition; just something temporary. It seems like using a
+                            // merged symbol is always a workable option, but may produce extra states. It's not clear
+                            // what the general condition is; may have to do with whether the produced symbol is left or right
+                            // recursive since if it is we might just recreate the issue...
+                            if (lengths.Single() > 0 && reductions.SelectMany(r => r.Rule.SymbolsList).All(s => s is Token))
+                            {
+                                foreach (var reduction in reductions) { AddInlinedRule(reduction.Rule); }
+                            }
+                            else
                             {
                                 if (!mergedSymbols.TryGetValue(reductions.Select(r => r.Rule.Produced), out var mergedSymbol))
                                 {
@@ -132,8 +139,6 @@ internal class LRGenerator
                                 changes.Enqueue((state, symbol, new Reduce(mergedRule)));
                                 continue;
                             }
-
-                            foreach (var reduction in reductions) { AddInlinedRule(reduction.Rule); }
                         }
                     }
                 }

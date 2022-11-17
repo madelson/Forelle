@@ -3,7 +3,8 @@
 public class LRInliningTest
 {
     private static readonly Token ID = new("ID"), SEMI = new("SEMI"), LBRACKET = new("LBRACKET"), RBRACKET = new("RBRACKET"),
-        EOF = new("EOF"), EQ = new("EQ"), TIMES = new("TIMES");
+        EOF = new("EOF"), EQ = new("EQ"), TIMES = new("TIMES"), LPAREN = new("LPAREN"), RPAREN = new("RPAREN"), COMMA = new("COMMA"),
+        COLON = new("COLON");
     private static readonly NonTerminal Exp = new("Exp"), Stmt = new("Stmt"), ExpList = new("List<Exp>"), StmtList = new("List<Stmt>"),
         Start = new("Start");
 
@@ -131,9 +132,60 @@ public class LRInliningTest
             .ShouldEqual("Start(Exp(B(TIMES B(TIMES B())) ID EQ) EOF)");
     }
 
+    // from https://www.researchgate.net/publication/363667136_Practical_LR_Parser_Generation
+    [Test]
+    public void TestPythonMatch()
+    {
+        Token MATCH = new("MATCH"), CASE = new("CASE");
+        NonTerminal Ident = new("Ident"), Case = new("Case"),
+            CaseList = new("List<Case>"), Tuple = new("Tuple"), ExpList = new("List<Exp>"),
+            Call = new("Call"), Arg = new("Arg"), ArgList = new("List<Arg>");
+
+        var rules = new Rule[]
+        {
+            new(Start, Stmt, EOF),
+            
+            new(Stmt, Exp),
+            new(Stmt, MATCH, Exp, CaseList),
+
+            new(Exp, Ident),
+            new(Exp, Call),
+            new(Exp, Tuple),
+            
+            new(Ident, ID),
+            new(Ident, MATCH),
+
+            new(Call, Ident, LPAREN, ArgList, RPAREN),
+
+            new(ArgList, Arg),
+            new(ArgList, Arg, COMMA, ArgList),
+
+            new(Arg, Ident),
+
+            new(Tuple, LPAREN, ExpList, RPAREN),
+
+            new(ExpList, Exp),
+            new(ExpList, Exp, COMMA, ExpList),
+
+            new(CaseList, Case),
+            new(CaseList, Case, CaseList),
+
+            new(Case, CASE, Exp, COLON, Exp),
+        };
+
+        var parser = CreateParser(rules);
+
+        parser.Parse(MATCH, LPAREN, ID, COMMA, ID, RPAREN, EOF).ToString()
+            .ShouldEqual("Start(Stmt(Exp(Call(Ident(MATCH) LPAREN List<Arg>(Arg(Ident(ID)) COMMA List<Arg>(Arg(Ident(ID)))) RPAREN))) EOF)");
+
+        parser.Parse(MATCH, LPAREN, ID, COMMA, ID, RPAREN, CASE, ID, COLON, ID, EOF).ToString()
+            .ShouldEqual("Start(Stmt(MATCH Exp(Tuple(LPAREN List<Exp>(Exp(Ident(ID)) COMMA List<Exp>(Exp(Ident(ID)))) RPAREN)) List<Case>(Case(CASE Exp(Ident(ID)) COLON Exp(Ident(ID))))) EOF)");
+    }
+
     private static TestingParser CreateParser(Rule[] rules)
     {
         var states = LRGenerator.Generate(rules);
+        Console.WriteLine($"States: {states.Length}");
         Console.WriteLine(DebuggingHelpers.CreateLRTableHtml(states));
         return new(states);
     }
